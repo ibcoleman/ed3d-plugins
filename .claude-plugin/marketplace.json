@@ -142,6 +142,25 @@
                 "e2e",
                 "web-scraping"
             ]
+        },
+        {
+            "name": "ed3d-session-reflection",
+            "description": "EXPERIMENTAL. Session awareness and conversation review tooling. Captures session metadata via SessionStart hook and provides conversation review agents and skills for analyzing prompting effectiveness, agent performance, and environment gaps.",
+            "version": "0.1.0",
+            "source": "./plugins/ed3d-session-reflection",
+            "author": {
+                "name": "Ed",
+                "email": "ed@ed3d.net"
+            },
+            "license": "UNLICENSED",
+            "keywords": [
+                "hooks",
+                "session",
+                "review",
+                "analysis",
+                "prompting",
+                "experimental"
+            ]
         }
     ]
 }

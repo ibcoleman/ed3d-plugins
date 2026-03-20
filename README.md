@@ -37,6 +37,8 @@ Rough Idea
 | **`ed3d-playwright`**| Playwright automation with subagents |
 | **`ed3d-hook-skill-reinforcement`** | UserPromptSubmit hook that reinforces the need to activate skills—helps make sure skills actually get used. Requires `ed3d-extending-claude` to work |
 | **`ed3d-hook-claudemd-reminder`** | PostToolUse hook that reminds to update CLAUDE.md before committing |
+| **`ed3d-hook-security-hardening`** | PreToolUse and PostToolUse hooks that catch secrets leakage patterns |
+| **`ed3d-session-reflection`** | EXPERIMENTAL. Session awareness and conversation review tooling. Requires `ed3d-extending-claude` |
 
 ## Installation
 
@@ -68,7 +70,9 @@ ed3d-plugins/
 │   ├── ed3d-extending-claude/
 │   ├── ed3d-playwright/
 │   ├── ed3d-hook-skill-reinforcement/
-│   └── ed3d-hook-claudemd-reminder/
+│   ├── ed3d-hook-claudemd-reminder/
+│   ├── ed3d-hook-security-hardening/
+│   └── ed3d-session-reflection/
 └── README.md
 ```
 

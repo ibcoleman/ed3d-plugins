@@ -1,5 +1,16 @@
 # Changelog
 
+## ed3d-session-reflection 0.1.0
+
+EXPERIMENTAL. Session awareness and conversation review tooling.
+
+**New:**
+- SessionStart hook that injects session ID and transcript path into Claude's context
+- `reduce-transcript.py` script that strips JSONL transcripts to token-efficient text (78-99% reduction)
+- `conversation-reviewer` Opus agent that analyzes sessions for prompting effectiveness, agent performance, and environment gaps
+- `/review-session` skill for single-session deep review
+- `/review-recent-sessions` skill for parallel multi-session review with cross-session synthesis
+
 ## ed3d-hook-security-hardening 1.0.1
 
 Expanded detection coverage to address common Claude-generated access patterns.
