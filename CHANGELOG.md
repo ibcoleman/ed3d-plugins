@@ -1,5 +1,13 @@
 # Changelog
 
+## ed3d-plan-and-execute 1.11.1
+
+Integrate retrospective document consumption into existing skills.
+
+### Changed
+- `brainstorming` skill: added retrospective document check in Phase 1 (Understanding)
+- `starting-a-design-plan` skill: added retrospective document check between Phase 1 and Phase 2
+
 ## ed3d-plan-and-execute 1.11.0
 
 Add retrospective skill for capturing lessons learned when development attempts hit dead ends.
