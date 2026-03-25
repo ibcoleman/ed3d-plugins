@@ -4,7 +4,7 @@
 
 Integrate retrospective document consumption into existing skills.
 
-### Changed
+**Changed:**
 - `brainstorming` skill: added retrospective document check in Phase 1 (Understanding)
 - `starting-a-design-plan` skill: added retrospective document check between Phase 1 and Phase 2
 

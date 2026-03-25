@@ -74,100 +74,98 @@ Dispatch three subagents **in parallel** (single message with multiple Agent too
 
 ### Subagent 1: Git Analyst
 
-```
-Agent tool:
-  subagent_type: ed3d-basic-agents:haiku-general-purpose
-  model: haiku
-  description: "Git analysis for retrospective"
-  prompt: |
-    You are the Git Analyst for a retrospective. Analyze the git history
-    of branch "{branch_name}" compared to base "{base_branch}".
+<invoke name="Task">
+<parameter name="subagent_type">ed3d-basic-agents:haiku-general-purpose</parameter>
+<parameter name="description">Git analysis for retrospective</parameter>
+<parameter name="prompt">
+You are the Git Analyst for a retrospective. Analyze the git history
+of branch "{branch_name}" compared to base "{base_branch}".
 
-    Run these commands and analyze the output:
+Run these commands and analyze the output:
 
-    1. Full commit arc:
-       git log --oneline {base_branch}..HEAD
+1. Full commit arc:
+   git log --oneline {base_branch}..HEAD
 
-    2. Overall scope:
-       git diff --stat {base_branch}..HEAD
+2. Overall scope:
+   git diff --stat {base_branch}..HEAD
 
-    3. Churn hot spots -- files modified in 3+ separate commits:
-       git log --name-only --pretty=format: {base_branch}..HEAD | sort | uniq -c | sort -rn | head -20
+3. Churn hot spots -- files modified in 3+ separate commits:
+   git log --name-only --pretty=format: {base_branch}..HEAD | sort | uniq -c | sort -rn | head -20
 
-    4. Revert and fixup detection:
-       git log --oneline {base_branch}..HEAD | grep -iE "revert|fixup|squash"
+4. Revert and fixup detection:
+   git log --oneline {base_branch}..HEAD | grep -iE "revert|fixup|squash"
 
-    5. Workaround pattern detection (search commit messages):
-       git log --oneline {base_branch}..HEAD | grep -iE "workaround|hack|bandaid|attempt|temporary|revert"
-       NOTE: Do NOT match bare "fix:" -- that is a standard conventional commit prefix.
+5. Workaround pattern detection (search commit messages):
+   git log --oneline {base_branch}..HEAD | grep -iE "workaround|hack|bandaid|attempt|temporary|revert"
+   NOTE: Do NOT match bare "fix:" -- that is a standard conventional commit prefix.
 
-    Produce a structured report with these sections:
+Produce a structured report with these sections:
 
-    ## Commit Arc
-    Narrative summary of the branch progression (what was attempted, in what order).
+## Commit Arc
+Narrative summary of the branch progression (what was attempted, in what order).
 
-    ## Churn Hot Spots (Top 10)
-    | File | Change Count | Nature of Changes |
-    |------|-------------|-------------------|
+## Churn Hot Spots (Top 10)
+| File | Change Count | Nature of Changes |
+|------|-------------|-------------------|
 
-    ## Revert/Fixup Pairs
-    List any commits that undo or patch previous commits, with the original
-    and the correction.
+## Revert/Fixup Pairs
+List any commits that undo or patch previous commits, with the original
+and the correction.
 
-    ## Workaround Patterns
-    Commit messages suggesting workarounds or temporary fixes.
+## Workaround Patterns
+Commit messages suggesting workarounds or temporary fixes.
 
-    ## Summary
-    2-3 sentence narrative of the branch's progression.
-```
+## Summary
+2-3 sentence narrative of the branch's progression.
+</parameter>
+</invoke>
 
 ### Subagent 2: Design Comparator
 
 **Skip if no design plan was found.** Note "No design plan found -- skipping Design Comparator" in synthesis.
 
-```
-Agent tool:
-  subagent_type: ed3d-basic-agents:sonnet-general-purpose
-  model: sonnet
-  description: "Design plan comparison for retrospective"
-  prompt: |
-    You are the Design Comparator for a retrospective. Read the design plan
-    and categorize each assumption or architectural decision.
+<invoke name="Task">
+<parameter name="subagent_type">ed3d-basic-agents:sonnet-general-purpose</parameter>
+<parameter name="description">Design plan comparison for retrospective</parameter>
+<parameter name="prompt">
+You are the Design Comparator for a retrospective. Read the design plan
+and categorize each assumption or architectural decision.
 
-    Design plan: {design_plan_path}
-    Implementation plan directory (if exists): docs/implementation-plans/
+Design plan: {design_plan_path}
+Implementation plan directory (if exists): docs/implementation-plans/
 
-    Read the design plan. For each assumption or architectural decision
-    in the design, categorize it:
+Read the design plan. For each assumption or architectural decision
+in the design, categorize it:
 
-    - **Validated** -- held up during implementation
-    - **Partially Wrong** -- needed adjustment but core idea survived
-    - **Invalidated** -- fundamentally incorrect, caused rework
-    - **Untested** -- never got far enough to validate
+- **Validated** -- held up during implementation
+- **Partially Wrong** -- needed adjustment but core idea survived
+- **Invalidated** -- fundamentally incorrect, caused rework
+- **Untested** -- never got far enough to validate
 
-    To determine categories, also check:
-    - Git history: git log --oneline {base_branch}..HEAD
-    - Implementation plan phases (if they exist in docs/implementation-plans/)
-    - Files changed: git diff --stat {base_branch}..HEAD
+To determine categories, also check:
+- Git history: git log --oneline {base_branch}..HEAD
+- Implementation plan phases (if they exist in docs/implementation-plans/)
+- Files changed: git diff --stat {base_branch}..HEAD
 
-    Cross-reference with git churn -- files modified many times often
-    indicate invalidated assumptions.
+Cross-reference with git churn -- files modified many times often
+indicate invalidated assumptions.
 
-    Produce a structured report:
+Produce a structured report:
 
-    ## Assumption Audit
+## Assumption Audit
 
-    | # | Assumption | Reality | Impact | Category |
-    |---|-----------|---------|--------|----------|
-    (number each assumption sequentially)
+| # | Assumption | Reality | Impact | Category |
+|---|-----------|---------|--------|----------|
+(number each assumption sequentially)
 
-    ## Narrative
-    Which decisions held? Which broke? What was the biggest surprise?
+## Narrative
+Which decisions held? Which broke? What was the biggest surprise?
 
-    ## Untested Assumptions
-    List assumptions that were never reached -- these carry forward
-    as risks for the next attempt.
-```
+## Untested Assumptions
+List assumptions that were never reached -- these carry forward
+as risks for the next attempt.
+</parameter>
+</invoke>
 
 ### Subagent 3: Transcript Reviewer
 
@@ -204,54 +202,53 @@ fi
 
 **After resolving paths, dispatch subagent with absolute paths:**
 
-```
-Agent tool:
-  subagent_type: ed3d-basic-agents:sonnet-general-purpose
-  model: sonnet
-  description: "Transcript review for retrospective"
-  prompt: |
-    You are the Transcript Reviewer for a retrospective on the
-    "{branch_name}" branch (feature: {feature_description}).
+<invoke name="Task">
+<parameter name="subagent_type">ed3d-basic-agents:sonnet-general-purpose</parameter>
+<parameter name="description">Transcript review for retrospective</parameter>
+<parameter name="prompt">
+You are the Transcript Reviewer for a retrospective on the
+"{branch_name}" branch (feature: {feature_description}).
 
-    Your job is to find pivot moments, discovery moments, and workaround
-    discussions in recent session transcripts.
+Your job is to find pivot moments, discovery moments, and workaround
+discussions in recent session transcripts.
 
-    **IMPORTANT:** Transcripts are scoped by recency, not by branch.
-    Some sessions may be about unrelated work. Filter for content relevant
-    to the feature being retrospected. Discard unrelated sessions.
+**IMPORTANT:** Transcripts are scoped by recency, not by branch.
+Some sessions may be about unrelated work. Filter for content relevant
+to the feature being retrospected. Discard unrelated sessions.
 
-    Step 1: Reduce each transcript (REQUIRED -- raw JSONL will exceed context)
+Step 1: Reduce each transcript (REQUIRED -- raw JSONL will exceed context)
 
-    For each transcript file, run:
-      python3 {reduce_script_path} "{transcript_path}" "/tmp/retro-{session_id}/reduced-{N}.txt"
+For each transcript file, run:
+  python3 {reduce_script_path} "{transcript_path}" "/tmp/retro-{session_id}/reduced-{N}.txt"
 
-    Transcript files to process (most recent first):
-    {list of absolute paths to .jsonl files}
+Transcript files to process (most recent first):
+{list of absolute paths to .jsonl files}
 
-    Step 2: Read each reduced transcript and scan for:
+Step 2: Read each reduced transcript and scan for:
 
-    - **Pivot moments** -- where conversation shifted from "working" to
-      "not working" (e.g., "this approach won't work because...")
-    - **Discovery moments** -- where a new constraint was first identified
-      (e.g., "I just realized that X doesn't support Y")
-    - **Workaround discussions** -- where shims or hacks were proposed
-      (e.g., "as a workaround, we could...")
+- **Pivot moments** -- where conversation shifted from "working" to
+  "not working" (e.g., "this approach won't work because...")
+- **Discovery moments** -- where a new constraint was first identified
+  (e.g., "I just realized that X doesn't support Y")
+- **Workaround discussions** -- where shims or hacks were proposed
+  (e.g., "as a workaround, we could...")
 
-    Step 3: Produce a structured report:
+Step 3: Produce a structured report:
 
-    ## Key Moments (5-10 most significant)
+## Key Moments (5-10 most significant)
 
-    | # | Type | Session | Summary |
-    |---|------|---------|---------|
-    (One sentence each with enough context to understand the significance)
+| # | Type | Session | Summary |
+|---|------|---------|---------|
+(One sentence each with enough context to understand the significance)
 
-    ## Timeline
-    Chronological narrative of how understanding evolved across sessions.
+## Timeline
+Chronological narrative of how understanding evolved across sessions.
 
-    ## Patterns
-    Any recurring themes (e.g., same constraint discovered multiple ways,
-    same workaround attempted repeatedly).
-```
+## Patterns
+Any recurring themes (e.g., same constraint discovered multiple ways,
+same workaround attempted repeatedly).
+</parameter>
+</invoke>
 
 After all subagents complete, mark "Phase 1: Evidence Gathering" as completed.
 
