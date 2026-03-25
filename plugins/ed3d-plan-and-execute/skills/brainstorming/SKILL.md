@@ -125,7 +125,30 @@ Then use WebFetch to read the official docs
    - Ask investigator to identify constraints from current codebase
    - Review investigator's findings before proceeding
 
-2. **Then gather requirements:**
+2. **Check for retrospective documents:**
+   - Search `docs/design-plans/` for files matching `*-retrospective*.md`
+   - If no files found, proceed silently to step 3 (do not mention absence)
+   - **If 5 or fewer candidates found:** Present ALL via AskUserQuestion:
+     ```
+     Question: "I found retrospective document(s) from previous attempts. Should I incorporate lessons learned?"
+     Options:
+       - "{filename-1}" (retrospective from previous attempt)
+       - "{filename-2}" (if multiple)
+       - "None - start fresh" (ignore all retrospectives)
+     ```
+   - **If more than 5 candidates found:** Filter first:
+     1. Strip `YYYY-MM-DD-` prefix and `-retrospective*` suffix from each filename to get candidate slugs
+     2. Also read each retrospective's `# Retrospective: {Feature Name}` title line for additional tokens
+     3. Tokenize both the user's topic description and the candidate slug + title on hyphens and spaces
+     4. Keep candidates where >50% of slug/title tokens appear in the user's description
+     5. Present ALL matches via AskUserQuestion (let user make final relevance call)
+   - **If user selects a retrospective:** Read these sections from the selected file:
+     - **Recommendations for Next Attempt** -- pre-populate as constraints for this design
+     - **Assumption Audit** -- flag any "Invalidated" assumptions so the new design avoids them
+     - **What Worked** -- seed approach exploration with validated approaches
+   - Incorporate findings into your understanding before proceeding
+
+3. **Then gather requirements:**
    - Use TaskUpdate to mark Phase 1 as in_progress
    - Ask ONE question at a time to refine the idea
    - **Use AskUserQuestion tool** when you have multiple choice options
