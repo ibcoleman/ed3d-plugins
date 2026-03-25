@@ -1,5 +1,12 @@
 # Changelog
 
+## ed3d-plan-and-execute 1.11.0
+
+Add retrospective skill for capturing lessons learned when development attempts hit dead ends.
+
+**New:**
+- `/retrospective` skill: captures lessons learned when a development loop hits a dead end, dispatches parallel subagents for git analysis, design plan comparison, and transcript review, synthesizes findings, conducts targeted Q&A, and produces a structured retrospective document
+
 ## ed3d-session-reflection 0.2.0
 
 **New:**
