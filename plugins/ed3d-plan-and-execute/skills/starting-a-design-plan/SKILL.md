@@ -33,6 +33,7 @@ Use TaskCreate to create todos for each phase (or TodoWrite in older Claude Code
 
 - Phase 1: Context Gathering (initial information collected)
 - (conditional) Read project design guidance (if `.ed3d/design-plan-guidance.md` exists)
+- (conditional) Check for retrospective documents (if `*-retrospective*.md` files exist in `docs/design-plans/`)
 - Phase 2: Clarification (requirements disambiguated)
 - Phase 3: Definition of Done (deliverables confirmed)
 - Phase 4: Brainstorming (design validated)
@@ -108,6 +109,54 @@ Proceed directly to Phase 2. Do not create a task or mention the missing file.
 - Project conventions that designs must follow
 
 The guidance informs what questions you ask during clarification.
+
+### Between Phase 1 and Phase 2: Check for Retrospective Documents
+
+Before clarification, check for retrospective documents from previous design attempts.
+
+**Search for retrospective documents:**
+
+Use the Glob tool to search for `*-retrospective*.md` files in `docs/design-plans/`.
+
+**If no files found:**
+
+Proceed directly to Phase 2. Do not create a task or mention the missing files.
+
+**If files found:**
+
+1. Use TaskCreate to add: "Check retrospective documents from previous attempts"
+   - Set this task as blocked by Phase 1 (Context Gathering) and the design guidance task (if it was created)
+   - Update Phase 2 (Clarification) to be blocked by this new task
+2. Mark the task in_progress
+3. **If 5 or fewer candidates:** Present ALL via AskUserQuestion:
+   ```
+   Question: "I found retrospective document(s) from previous attempts related to this design. Should I incorporate lessons learned?"
+   Options:
+     - "{filename-1}" (retrospective from previous attempt)
+     - "{filename-2}" (if multiple)
+     - "None - start fresh" (ignore all retrospectives)
+   ```
+4. **If more than 5 candidates:** Filter first:
+   - Strip `YYYY-MM-DD-` prefix and `-retrospective*` suffix to get candidate slugs
+   - Read each file's `# Retrospective: {Feature Name}` title for additional tokens
+   - Tokenize both the user's topic and candidate slug + title on hyphens and spaces
+   - Keep candidates where >50% of slug/title tokens appear in user's description
+   - Present ALL matches via AskUserQuestion
+5. **If user selects a retrospective:** Read these sections:
+   - **Recommendations for Next Attempt** -- pre-populate as constraints
+   - **Assumption Audit** -- flag "Invalidated" assumptions to avoid
+   - **What Worked** -- preserve successful approaches
+6. Incorporate findings into your understanding
+7. Mark the task completed
+8. Proceed to Phase 2
+
+**What retrospective documents provide:**
+- Constraints discovered during a previous implementation attempt
+- Assumptions that were invalidated (avoid repeating them)
+- Approaches that worked (preserve and build on them)
+- Specific recommendations for the next design attempt
+
+The retrospective informs both what questions you ask during clarification and what approaches you explore during brainstorming.
 
 ### Phase 2: Clarification
 
