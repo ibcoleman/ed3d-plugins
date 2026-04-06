@@ -1,19 +1,11 @@
 # Changelog
 
-## ed3d-plan-and-execute 1.11.1
-
-Integrate retrospective document consumption into existing skills.
-
-**Changed:**
-- `brainstorming` skill: added retrospective document check in Phase 1 (Understanding)
-- `starting-a-design-plan` skill: added retrospective document check between Phase 1 and Phase 2
-
 ## ed3d-plan-and-execute 1.11.0
 
-Add retrospective skill for capturing lessons learned when development attempts hit dead ends.
+Remove SessionStart hook that injected the entire `using-plan-and-execute` skill into context on every session start.
 
-**New:**
-- `/retrospective` skill: captures lessons learned when a development loop hits a dead end, dispatches parallel subagents for git analysis, design plan comparison, and transcript review, synthesizes findings, conducts targeted Q&A, and produces a structured retrospective document
+**Fixed:**
+- Removed SessionStart hook that wasted context tokens by injecting the full SKILL.md content as additionalContext on every conversation
 
 ## ed3d-session-reflection 0.2.0
 

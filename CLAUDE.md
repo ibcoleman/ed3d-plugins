@@ -49,22 +49,3 @@ Brief description of the release.
 ```
 
 Only include sections that apply. Keep entries concise.
-
-### Retrospective Document Convention
-
-Last verified: 2026-03-25
-
-The `/retrospective` skill produces structured markdown documents at `docs/design-plans/{slug}-retrospective.md`. These documents capture lessons learned when a development attempt hits a dead end.
-
-**Producer:** `retrospective` skill (writes the document)
-
-**Consumers:** `brainstorming` and `starting-a-design-plan` skills (read the document to inform new design attempts)
-
-**File location contract:** `docs/design-plans/{slug}-retrospective.md`, where `{slug}` is derived from the design plan filename or sanitized branch name. Collision avoidance uses a counter suffix (`-2`, `-3`, etc.).
-
-**Required sections consumed by downstream skills:**
-- `Recommendations for Next Attempt` -- pre-populated as constraints for new designs
-- `Assumption Audit` -- "Invalidated" assumptions are flagged so new designs avoid them
-- `What Worked` -- validated approaches are seeded into new design exploration
-
-**Invariant:** Any skill that produces design plans or brainstorming output must check for retrospective documents in `docs/design-plans/` before starting its design work. Currently this applies to `brainstorming` (Phase 1) and `starting-a-design-plan` (between Phase 1 and Phase 2).

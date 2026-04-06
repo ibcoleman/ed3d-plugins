@@ -1,7 +1,5 @@
 # ed3d-plugins
 
-THIS IS A FORK OF ED3D's SUPERB CC PLUGINS
-
 This is my collection of plugins that I use on a day-to-day basis for getting stuff done with Claude Code. Most of these are development-oriented in some way or another, but also often end up being useful for other things. Product design, general research, accidentally becoming my homelab sysadmin—these are a lot of what I've learned so far and what I've found helpful.
 
 The big stick in this repository is `ed3d-plan-and-execute`, which implements an "RPI" (research-plan-implement) loop that I think does a really good job of avoiding hallucination in the planning stages, adhering to high-level product requirements, avoiding drift between design planning and implementation planning, and reviewing the results such that you get out the other end not just what you asked for, but what you actually wanted.
@@ -44,9 +42,9 @@ Rough Idea
 
 ## Installation
 
-### Add the marketplace (Edit: reminder this is my local fork)
+### Add the marketplace
 ```bash
-/plugin marketplace add https://github.com/ibcoleman/ed3d-plugins.git
+/plugin marketplace add https://github.com/ed3dai/ed3d-plugins.git
 ```
 
 ### Install plugins
