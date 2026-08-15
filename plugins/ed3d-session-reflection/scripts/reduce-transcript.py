@@ -104,20 +104,97 @@ def _summarize_tool_input(tool_input, max_value_len=200):
     return "; ".join(parts)
 
 
+def _error_text(error):
+    """Extract human-readable text from a Copilot error field (str or dict)."""
+    if isinstance(error, str) and error.strip():
+        return error
+    if isinstance(error, dict) and error:
+        message = error.get("message")
+        if isinstance(message, str) and message.strip():
+            return message
+        return json.dumps(error, indent=2)
+    return ""
+
+
 def parse_line(line_data):
     """Parse a JSONL line into a normalized structure, or None to skip.
 
-    Returns a dict with keys: role, timestamp, blocks, line_type.
+    Returns a dict with keys: role, timestamp, blocks, line_type, and optionally
+    agent_id.
     """
     line_type = line_data.get("type", "")
+    timestamp = line_data.get("timestamp", "")
+
+    # Copilot CLI events have dotted types and put their payload in data.
+    if isinstance(line_data.get("data"), dict) and isinstance(line_type, str) and "." in line_type:
+        data = line_data["data"]
+        agent_id = line_data.get("agentId")
+        common = {"timestamp": timestamp, "line_type": line_type}
+        if agent_id:
+            common["agent_id"] = agent_id
+
+        if line_type == "user.message":
+            content = data.get("content") or data.get("transformedContent", "")
+            blocks = extract_content_blocks(content)
+            return {"role": "user", "blocks": blocks, **common} if blocks else None
+
+        if line_type == "assistant.message":
+            blocks = []
+            content = data.get("content")
+            if isinstance(content, str) and content.strip():
+                blocks.extend(extract_content_blocks(content))
+            reasoning = data.get("reasoningText")
+            if isinstance(reasoning, str) and reasoning.strip():
+                blocks.append({"kind": "thinking", "text": reasoning})
+            tool_requests = data.get("toolRequests")
+            if not isinstance(tool_requests, list):
+                tool_requests = []
+            for request in tool_requests:
+                if isinstance(request, dict):
+                    blocks.append({"kind": "tool_use", "tool_name": request.get("name", "unknown"),
+                                   "tool_input": request.get("arguments", {}), "text": ""})
+            return {"role": "assistant", "blocks": blocks, **common} if blocks else None
+
+        if line_type == "tool.execution_complete":
+            result = data.get("result", {})
+            error_text = _error_text(data.get("error"))
+            if not result and error_text:
+                # Failed executions often carry the reason in data.error with no result.
+                # Non-empty data.error implies failure unless success is explicitly true.
+                kind = "tool_result" if data.get("success") is True else "tool_result_failed"
+                return {"role": "tool", "blocks": [{"kind": kind, "text": error_text}], **common}
+            if isinstance(result, dict):
+                result_content = result.get("content")
+                if result_content is None:
+                    result_content = result.get("detailedContent")
+                if result_content is None:
+                    result_content = json.dumps(result, indent=2)
+            else:
+                result_content = result
+            if isinstance(result_content, str):
+                result_text = result_content
+            else:
+                inner = extract_content_blocks(result_content)
+                result_text = "\n".join(b["text"] for b in inner if b.get("text"))
+                if not result_text and isinstance(result_content, dict):
+                    result_text = json.dumps(result_content, indent=2)
+            if not str(result_text).strip():
+                return None
+            kind = "tool_result_failed" if data.get("success") is False else "tool_result"
+            return {"role": "tool", "blocks": [{"kind": kind, "text": str(result_text)}], **common}
+
+        if line_type == "system.message":
+            blocks = extract_content_blocks(data.get("content", ""))
+            return {"role": "system", "blocks": blocks, **common} if blocks else None
+        return None
 
     if line_type in SKIP_TYPES:
         return None
 
-    timestamp = line_data.get("timestamp", "")
-
     if line_type in ("user", "assistant"):
         message = line_data.get("message", {})
+        if not isinstance(message, dict):
+            return None
         role = message.get("role", line_type)
         content = message.get("content", "")
         blocks = extract_content_blocks(content)
@@ -162,15 +239,25 @@ def extract_metadata(lines_iter):
     metadata = {}
     parsed = []
 
+    shutdown_model = ""
     for line_data in lines_iter:
+        line_type = line_data.get("type", "")
+        data = line_data.get("data", {})
+        is_copilot = isinstance(data, dict) and isinstance(line_type, str) and "." in line_type
         if not metadata.get("session_id"):
             metadata["session_id"] = line_data.get("sessionId", "")
+            if is_copilot and line_type == "session.start":
+                metadata["session_id"] = data.get("sessionId", "")
         if not metadata.get("cwd"):
             metadata["cwd"] = line_data.get("cwd", "")
         if not metadata.get("model"):
             msg = line_data.get("message", {})
             if isinstance(msg, dict):
                 metadata["model"] = msg.get("model", "")
+            if is_copilot and line_type == "assistant.message":
+                metadata["model"] = data.get("model", "")
+        if is_copilot and line_type == "session.shutdown" and not shutdown_model:
+            shutdown_model = data.get("currentModel", "")
         if not metadata.get("first_timestamp"):
             ts = line_data.get("timestamp", "")
             if ts:
@@ -179,6 +266,8 @@ def extract_metadata(lines_iter):
 
         parsed.append(line_data)
 
+    if not metadata.get("model"):
+        metadata["model"] = shutdown_model
     return metadata, parsed
 
 
@@ -207,6 +296,8 @@ def format_reduced(parsed_lines):
 
         parts = []
         role = entry["role"]
+        if entry.get("agent_id"):
+            role = f"{role}:{entry['agent_id']}"
         ts = entry["timestamp"]
         ts_suffix = f" ({ts})" if ts else ""
 
@@ -217,8 +308,9 @@ def format_reduced(parsed_lines):
             elif kind == "tool_use":
                 summary = _summarize_tool_input(block["tool_input"], TOOL_INPUT_LIMIT_REDUCED)
                 parts.append(f"[tool_use:{block['tool_name']}] {summary}")
-            elif kind == "tool_result":
-                parts.append(f"[tool_result] {_truncate(block['text'], TOOL_RESULT_LIMIT_REDUCED)}")
+            elif kind in ("tool_result", "tool_result_failed"):
+                label = "tool_result:failed" if kind == "tool_result_failed" else "tool_result"
+                parts.append(f"[{label}] {_truncate(block['text'], TOOL_RESULT_LIMIT_REDUCED)}")
             elif kind == "thinking":
                 parts.append(f"[thinking] {_truncate(block['text'], THINKING_LIMIT_REDUCED)}")
 
@@ -264,18 +356,19 @@ def format_markdown(metadata, parsed_lines):
         role = entry["role"]
         ts = _format_timestamp_human(entry["timestamp"])
         ts_suffix = f" ({ts})" if ts else ""
+        agent_suffix = f" (subagent {entry['agent_id']})" if entry.get("agent_id") else ""
 
         msg_parts = []
 
         if role == "user":
-            msg_parts.append(f"**human**{ts_suffix}\n")
+            msg_parts.append(f"**human**{agent_suffix}{ts_suffix}\n")
         elif role == "assistant":
-            msg_parts.append(f"**assistant**{ts_suffix}\n")
+            msg_parts.append(f"**assistant**{agent_suffix}{ts_suffix}\n")
         elif role == "tool":
             # Tool results rendered inline, no separate header
             pass
         else:
-            msg_parts.append(f"**{role}**{ts_suffix}\n")
+            msg_parts.append(f"**{role}**{agent_suffix}{ts_suffix}\n")
 
         for block in entry["blocks"]:
             kind = block["kind"]
@@ -290,16 +383,19 @@ def format_markdown(metadata, parsed_lines):
                 msg_parts.append(f"#### Tool: {tool_name}\n")
                 msg_parts.append(input_text)
 
-            elif kind == "tool_result":
+            elif kind in ("tool_result", "tool_result_failed"):
+                failed = kind == "tool_result_failed"
+                summary_label = "Tool Result (failed)" if failed else "Tool Result"
                 result_text = block["text"]
                 if len(result_text) > 500:
                     msg_parts.append(
-                        "<details>\n<summary>Tool Result</summary>\n\n"
+                        f"<details>\n<summary>{summary_label}</summary>\n\n"
                         f"```\n{_truncate(result_text, TOOL_RESULT_LIMIT_MARKDOWN)}\n```\n"
                         "</details>"
                     )
                 else:
-                    msg_parts.append(f"```\n{result_text}\n```")
+                    prefix = f"**{summary_label}**\n" if failed else ""
+                    msg_parts.append(f"{prefix}```\n{result_text}\n```")
 
             elif kind == "thinking":
                 msg_parts.append(
@@ -347,9 +443,12 @@ def parse_jsonl_file(path):
             if not raw_line:
                 continue
             try:
-                yield json.loads(raw_line)
-            except json.JSONDecodeError:
+                obj = json.loads(raw_line)
+            except ValueError:
                 pass
+            else:
+                if isinstance(obj, dict):
+                    yield obj
 
 
 def main():
@@ -363,10 +462,16 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     flags = {a for a in sys.argv[1:] if a.startswith("--")}
     use_markdown = "--markdown" in flags
+    if not args:
+        print(
+            f"Usage: {sys.argv[0]} <input.jsonl> [output] [--markdown]",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     input_path = Path(args[0])
-    if not input_path.exists():
-        print(f"error: file not found: {input_path}", file=sys.stderr)
+    if not input_path.is_file():
+        print(f"error: input file not found: {input_path}", file=sys.stderr)
         sys.exit(1)
 
     output_path = Path(args[1]) if len(args) >= 2 else None

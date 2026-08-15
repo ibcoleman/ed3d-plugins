@@ -1,6 +1,5 @@
 ---
 description: Show the ed3d-plugins README and getting started information
-allowed-tools:
 ---
 
 # Getting Started with ed3d-plugins
