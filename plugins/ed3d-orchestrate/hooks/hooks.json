@@ -1,0 +1,28 @@
+{
+    "hooks": {
+        "agentStop": [
+            {
+                "matcher": "",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/check-review-loop.py\"",
+                        "timeout": 5
+                    }
+                ]
+            }
+        ],
+        "Stop": [
+            {
+                "matcher": "",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/check-review-loop.py\"",
+                        "timeout": 5
+                    }
+                ]
+            }
+        ]
+    }
+}
