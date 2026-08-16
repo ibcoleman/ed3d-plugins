@@ -1,5 +1,16 @@
 # Changelog
 
+## [ed3d-orchestrate] [0.1.0]
+
+Initial release of the Copilot CLI orchestration loop plugin.
+
+**New:**
+- `orchestrating-the-loop` master skill: scout-sweep research → plan document → plan-review gate → builder fanout → adversarial tumble-dryer review → final report
+- `adversary` and `plan-reviewer` agents on a high-reasoning model tier (decorrelated from the worker-bee builders)
+- `scout-sweep` and `adversarial-review` skills
+- `/orchestrate` command
+- `agentStop`/`Stop` guardrail hook that blocks premature session stops while a review loop is active (fail-open, 8-consecutive-block cap respected); standalone test suite included
+
 ## [ed3d-basic-agents] 1.2.0, [ed3d-extending-claude] 1.2.0, [ed3d-plan-and-execute] 1.12.0, [ed3d-playwright] 1.1.0, [ed3d-research-agents] 1.2.0, [ed3d-session-reflection] 0.3.0
 
 Nested subagent spawning is now explicitly disabled across repository subagents and workflow documentation.
