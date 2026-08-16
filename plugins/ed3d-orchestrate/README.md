@@ -153,7 +153,7 @@ Watch `.ed3d/orchestrate-state.json` as the loop runs — phase and review trans
 
 ### Context handoff and resume
 
-Builders and reviewers run in isolated subagent contexts, but the orchestrating session accumulates every printed subagent response. For large tasks, clear between phases: the loop records its full position in the state file (`phase`, `plan_path`, the review block), so `/clear` followed by `/ed3d-orchestrate:orchestrate resume` picks the loop back up with a fresh context — completed phases are not repeated.
+Builders and reviewers run in isolated subagent contexts, but the orchestrating session accumulates every printed subagent response. After the plan-review gate passes, the orchestrator **stops and offers the choice**: reply *continue* to proceed in the same context, or `/clear` and then `/ed3d-orchestrate:orchestrate resume` to continue with a fresh context — the loop records its full position in the state file (`phase`, `plan_path`, the review block), and completed phases are never repeated. You can also `/clear` + resume at any other phase boundary on your own initiative; the state file is current at every transition.
 
 ## Known Limitations
 

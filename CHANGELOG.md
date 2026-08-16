@@ -1,5 +1,13 @@
 # Changelog
 
+## [ed3d-orchestrate] [0.2.1]
+
+The context handoff is now a mandatory stop instead of an advisory note.
+
+**Changed:**
+- After the plan-review gate passes, the orchestrator must end its turn and offer the choice (continue in-context vs `/clear` + `/orchestrate resume`) before dispatching any builder — previously advisory, and the loop ran straight through to execution
+- `phase: "execute"` is recorded at the gate stop (state file), so resume lands directly in Phase 4; operators may still `/clear` + resume at any boundary on their own initiative
+
 ## [ed3d-orchestrate] [0.2.0]
 
 Context handoff and resume, plus marketplace-user documentation clarity.

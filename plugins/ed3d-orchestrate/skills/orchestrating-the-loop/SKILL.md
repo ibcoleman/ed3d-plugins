@@ -74,7 +74,25 @@ The plan does not proceed to execution until it survives review.
 3. On critical/high findings: fix the plan document, then re-dispatch `plan-reviewer` **once**.
 4. If critical/high findings persist after the single re-review: **stop and present them to the operator.** The operator decides whether to revise again, proceed with acknowledged risks, or abandon. Do not proceed to execution on your own authority with open critical/high plan findings.
 
+## Context Handoff Gate (stop after plan review)
+
+Subagents run in isolated context windows, but **your** context accumulates every scout report, review, and builder response — the transparency rules require printing them all. Research and planning are the context-heavy phases; execution and review pile on more.
+
+**Mandatory:** when the plan-review gate passes, before dispatching ANY builder:
+
+1. Update the state file: `phase: "execute"` and `plan_path` set to the plan document's absolute path.
+2. **End your turn** and present to the operator:
+   - the plan-review verdict, in one or two lines, and
+   - the choice: reply **continue** to start the builders in this context, or run `/clear` and then `/ed3d-orchestrate:orchestrate resume` to continue with a fresh context.
+3. Do not dispatch builders in the same turn in which the gate passed. This stop is safe: the guardrail hook only blocks stops while the review loop is active, which it is not yet.
+
+On resume, the loop reads the state file (`phase: "execute"`) and the plan document at `plan_path` and starts Phase 4 directly. Completed phases are never repeated; nothing is lost to `/clear` — the plan, the commits, and the state file all live on disk.
+
+The operator may also `/clear` + resume at any other phase boundary on their own initiative — the state file is current at every transition, so no cooperation from the loop is required.
+
 ## Phase 4: Execute
+
+If you are resuming into this phase (`phase: "execute"` in the state file), read the plan document at `plan_path` first, then continue from here.
 
 Fan out builders. One bounded task per dispatch — a builder gets a task it can complete fully with tests and a commit.
 
@@ -89,15 +107,7 @@ Fan out builders. One bounded task per dispatch — a builder gets a task it can
 - After EVERY subagent completes, print its **full response** before taking any other action. No summarizing, no paraphrasing. Include test counts, issue lists, commit hashes, error messages.
 - Before every dispatch, say in 2–3 sentences what you're asking the agent to do and which phase it covers.
 
-Update state: `phase: "execute"` before the first builder dispatch; `phase: "review"` when all builders have reported.
-
-## Context Handoff (optional, recommended for large tasks)
-
-Subagents run in isolated context windows, but **your** context accumulates every scout report, review, and builder response — the transparency rules require printing them all. For large tasks, hand off to a fresh context between phases instead of dragging research history through execution and review:
-
-1. Ensure the state file is current: `phase` up to date and `plan_path` set to the plan document's absolute path.
-2. Tell the operator: **"Context handoff point — to continue with a fresh context, run `/clear` and then `/ed3d-orchestrate:orchestrate resume`."**
-3. On resume, the loop reads the state file and the plan document and continues from the recorded phase. Completed phases are not repeated; nothing is lost to `/clear` — the plan, the commits, and the state file all live on disk.
+Update state: `phase: "review"` when all builders have reported (`phase: "execute"` is set earlier, at the context-handoff gate).
 
 ## Phase 5: Tumble Dryer
 
@@ -120,6 +130,7 @@ Final report to the operator:
 | "I know this codebase; skip the scout sweep" | No. Research-first is the loop's foundation. At minimum one codebase scout. |
 | "The plan is clear in my head; I'll write it as I go" | No. The plan document is the contract builders and reviewers work against. |
 | "Plan-reviewer only found medium issues; skip the re-review" | Medium/low don't require fixes. Critical/high do — fix, re-review once, then operator decides. |
+| "Gate passed, I'll just roll straight into the builders" | No. End your turn at the context-handoff gate and offer continue-vs-resume first. |
 | "I'll summarize the builder's response for the user" | No. Print the full response. Always. |
 | "The adversary didn't mention the prior issue, so it's fixed" | No. Silence is not confirmation. Carry it forward until explicitly confirmed fixed. |
 | "Medium/low findings — I'll fix them all anyway to be safe" | Your call, but not required — this loop ships with advisory findings listed. Don't burn rounds on them. |
