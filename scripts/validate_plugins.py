@@ -16,8 +16,9 @@ Checks (strict - failures exit 1):
   3. plugins/ed3d-orchestrate/ agent/skill/command frontmatter is strict
      (including commands/orchestrate.md), and the review-policy/protocol
      strings (verdict markers, verdict write-back atomicity, review.history
-     schema, adversary no-writes rule) exist in the adversary agent and
-     both loop skills
+     schema, adversary no-writes rule, git baseline preflight, auto-resume)
+     exist in the adversary agent, both loop skills, and the orchestrate
+     command
   4. .claude-plugin/marketplace.json parses, contains an ed3d-orchestrate
      entry whose source resolves, and every plugin source resolves
 
@@ -85,6 +86,13 @@ POLICY_TARGETS = {
         '{"round": N, "verdict": "PENDING", "critical_high": 0, "advisory": 0, "note": "adversary protocol failure"}',
         # resume reconciliation (0.3.0)
         "Resume reconciliation",
+        # verdict commit checklist with re-read verification (0.3.1)
+        "Use this checklist and do not skip the re-read",
+        "consecutive_blocks: 0",
+        # git baseline precondition (0.3.1)
+        "both are valid commits in the current git repository",
+        # terminal-state verification (0.3.1)
+        "verify the terminal state",
     ],
     "plugins/ed3d-orchestrate/skills/orchestrating-the-loop/SKILL.md": [
         # verdict write-back atomicity (0.3.0)
@@ -95,6 +103,23 @@ POLICY_TARGETS = {
         '"history": [',
         '{"round": 1, "verdict": "FIX-FIRST", "critical_high": 1, "advisory": 6}',
         '{"round": 2, "verdict": "SHIP", "critical_high": 0, "advisory": 0}',
+        # git baseline preflight + SHA recording (0.3.1)
+        "verify the git baseline",
+        '"base_sha": null',
+        '"head_sha": null',
+        "record `head_sha` from the current `HEAD`",
+        # terminal-state verification before final report (0.3.1)
+        "review.consecutive_blocks: 0",
+        # auto-resume rationalization (0.3.1)
+        "Not if a state file exists. Resume the recorded loop first.",
+    ],
+    "plugins/ed3d-orchestrate/commands/orchestrate.md": [
+        # auto-resume mode (0.3.1)
+        "records an in-progress loop (`review.active` is true, or `review.verdict` is not `SHIP`)",
+        "do not restart or repeat completed phases",
+        # git baseline requirement (0.3.1)
+        "requires a local git repository with at least one commit",
+        "record a valid `BASE_SHA` before builder execution",
     ],
 }
 

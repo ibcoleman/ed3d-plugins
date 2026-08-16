@@ -13,7 +13,7 @@ Drive adversarial review rounds over completed implementation work. This skill i
 ## Preconditions
 
 - Implementation work is complete and committed.
-- You know `BASE_SHA` (before the work) and `HEAD_SHA` (after).
+- You know `BASE_SHA` (before the work) and `HEAD_SHA` (after), and both are valid commits in the current git repository. If either SHA is missing or invalid, stop and fix the orchestration state — do not dispatch the adversary.
 - `.ed3d/orchestrate-state.json` exists and `review.active` is `true`. If it doesn't exist, create the review block before starting:
 
 ```json
@@ -71,14 +71,15 @@ From the response, extract:
 - `has_critical_or_high: true|false`
 - The findings list
 
-Then **immediately, in the same assistant turn**, rewrite `.ed3d/orchestrate-state.json`:
+Then **immediately, in the same assistant turn**, rewrite `.ed3d/orchestrate-state.json`. Use this checklist and do not skip the re-read:
 
-- `verdict` — the parsed verdict
-- `open_critical_high` — the list of open critical/high finding one-liners
-- `consecutive_blocks: 0` — the guardrail hook increments that counter each time it blocks a stop, and every verdict you commit here is progress, which resets it
-- `review.history` — append this round's entry (`{"round": N, "verdict": ..., "critical_high": C, "advisory": A}`); create the array first if the state file predates it
+1. Set `verdict` to the parsed verdict.
+2. Set `open_critical_high` to the list of open critical/high finding one-liners.
+3. Set `consecutive_blocks: 0` — the guardrail hook increments that counter each time it blocks a stop, and every verdict you commit here is progress, which resets it.
+4. Append `review.history` for this round (`{"round": N, "verdict": ..., "critical_high": C, "advisory": A}`); create the array first if the state file predates it.
+5. Re-read `.ed3d/orchestrate-state.json` and verify the written `verdict`, `open_critical_high`, `consecutive_blocks: 0`, and new `history` entry before doing anything else.
 
-Only after the state file is committed: print the adversary's full response, then branch on the verdict (step 3).
+Only after the state file is committed and verified: print the adversary's full response, then branch on the verdict (step 3).
 
 **A verdict that is not in the state file does not exist.** No stop, no operator report, no dispatch may occur between parsing a verdict and committing it to the state file — one turn, both actions. The guardrail reads the file, not your intentions.
 
@@ -87,7 +88,7 @@ If the response contains no parseable verdict block, treat it as a protocol fail
 ### 3. Branch on the Verdict
 
 **`VERDICT: SHIP`** (no open critical/high):
-- Set `review.active: false` in the same state write as (or immediately after) step 2's commit, keeping `verdict: "SHIP"` as the final state. Do not append a second `history` entry for this round — step 2 already appended it.
+- Set `review.active: false` in the same state write as (or immediately after) step 2's commit, keeping `verdict: "SHIP"` as the final state. Do not append a second `history` entry for this round — step 2 already appended it. Re-read the state file and verify the terminal state (`active: false`, `verdict: "SHIP"`, `consecutive_blocks: 0`) before reporting — the guardrail hook blocks stops on an inconsistent final SHIP.
 - Then report the round count (authoritative source: `review.history`) and any advisory (medium/low) findings left unfixed. Done.
 
 **`VERDICT: FIX-FIRST` with critical/high open:**
@@ -102,10 +103,10 @@ If the response contains no parseable verdict block, treat it as a protocol fail
 - If `round >= max_rounds`: **circuit-break.**
   1. Set `round` to `max_rounds + 1` in the state file (this tells the guardrail hook the cap is reached — it will allow the session to stop and prompt you to surface the decision).
   2. Stop fixing. Present the open critical/high findings to the operator with the round history and ask how to proceed: accept the findings as-is, raise `max_rounds`, or hand off.
-  3. When the operator decides: on accept-or-resolved, set `review.active: false` and `verdict: "SHIP"` (operator-accepted) before finishing.
+  3. When the operator decides: on accept-or-resolved, set `review.active: false`, `verdict: "SHIP"` (operator-accepted), and `consecutive_blocks: 0` before finishing.
 
 **`VERDICT: FIX-FIRST` with an empty critical/high list** (a contract violation by the adversary — FIX-FIRST is defined to mean open critical/high):
-- Trust the findings list over the verdict marker. Treat the review as advisory-only (medium/low): fix as appropriate (often worth one quick pass), then set `review.active: false`, `verdict: "SHIP"`, and list what was left unfixed in the final report. Note the protocol deviation in the report.
+- Trust the findings list over the verdict marker. Treat the review as advisory-only (medium/low): fix as appropriate (often worth one quick pass), then set `review.active: false`, `verdict: "SHIP"`, and `consecutive_blocks: 0`, and list what was left unfixed in the final report. Note the protocol deviation in the report.
 - This is the deliberate divergence from ed3d-plan-and-execute's zero-Minor policy: in this loop, only critical/high block shipping.
 
 ### 4. Rate Limits

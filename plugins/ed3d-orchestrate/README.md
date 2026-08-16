@@ -90,6 +90,8 @@ The loop maintains `.ed3d/orchestrate-state.json` in the working repository. It 
 {
   "task": "add string-reversal CLI with tests",
   "plan_path": "docs/implementation-plans/2026-08-16-string-reverse-cli/plan.md",
+  "base_sha": "3f2a1b9",
+  "head_sha": "b7ddd28",
   "phase": "review",
   "review": {
     "active": true,
@@ -108,10 +110,11 @@ The loop maintains `.ed3d/orchestrate-state.json` in the working repository. It 
 ```
 
 - `phase`: `research` | `plan` | `execute` | `review`
+- `base_sha` / `head_sha`: the commit range under review — recorded before builders run and after they commit; adversarial review refuses to start without both valid
 - `review.verdict`: `PENDING` | `SHIP` | `FIX-FIRST`; final states are `SHIP` (including operator-accepted) or `review.active: false`
 - `review.round` goes to `max_rounds + 1` when the circuit-breaker trips — that is the signal the hook uses to allow the stop
 - `review.history`: append-only per-round verdict record; survives `/clear`+resume; ignored by the hook
-- `consecutive_blocks` counts blocks-since-last-progress: the hook increments it, the orchestrating skills reset it to 0 on every round/verdict transition
+- `consecutive_blocks` counts blocks-since-last-progress: the hook increments it, the orchestrating skills reset it to 0 on every round/verdict transition; a terminal SHIP state with `consecutive_blocks != 0` is inconsistent and the hook will block the stop until it is repaired
 
 ## Review Policy (and how it differs from ed3d-plan-and-execute)
 
@@ -131,6 +134,8 @@ The loop maintains `.ed3d/orchestrate-state.json` in the working repository. It 
 - Registers under both documented spellings — Copilot-native `agentStop` and the VS Code-compatible `Stop` (which is also Claude Code's stop event). The decision output is stable across fires; if both events fire for one stop, the block counter increments once per event. (Note: `AgentStop` is **not** a documented event name in either runtime — the PascalCase equivalent of `agentStop` is `Stop`.)
 - Fail-open everywhere: no state file, malformed JSON, unreadable state, inactive review → exit 0 silently. Hook timeouts fail open per the Copilot hooks reference.
 - Blocking emits `{"decision": "block", "reason": "..."}` naming round N of M and the open findings; `round > max_rounds` allows the stop with a reason instructing the agent to surface the operator decision.
+- **Stale-verdict detection (0.3.1):** when the stop event carries a transcript path, the hook scans its tail; if the adversary already rendered `VERDICT: SHIP` + `has_critical_or_high: false` while the state file still says `PENDING`/active, the block reason instructs the orchestrator to commit the verdict (including `consecutive_blocks: 0`) instead of re-dispatching. Like every block it counts toward the 7-block safety cap, which takes precedence over it.
+- **Terminal-state enforcement (0.3.1):** a final `SHIP` state only allows a stop when it is consistent — `active: false`, `verdict: "SHIP"`, `consecutive_blocks: 0`. Otherwise the hook blocks with instructions to repair the state file before reporting — repeatedly until repaired, bounded by the 7-block safety cap.
 - Respects the CLI's 8-consecutive-block cap: after 7 blocks without recorded progress it allows with a warning, so a session can never hard-lock. The loop resets the counter on every round/verdict transition, so it only trips when stops are being blocked with no forward motion.
 
 Run the tests: `python3 plugins/ed3d-orchestrate/hooks/test-check-review-loop.py` (standalone, zero dependencies).
@@ -138,6 +143,7 @@ Run the tests: `python3 plugins/ed3d-orchestrate/hooks/test-check-review-loop.py
 ## Requirements
 
 - GitHub Copilot CLI with plugin + custom agent support
+- A local git repository with at least one commit — adversarial review needs a valid `BASE_SHA..HEAD_SHA` range; on a brand-new project the loop initializes git and creates a baseline commit before implementation
 - `ed3d-research-agents` (scouts) and `ed3d-plan-and-execute` (builders) installed
 - `ed3d-basic-agents` (generic scouts) recommended
 
@@ -157,11 +163,14 @@ Watch `.ed3d/orchestrate-state.json` as the loop runs — phase and review trans
 
 ### Context handoff and resume
 
-Builders and reviewers run in isolated subagent contexts, but the orchestrating session accumulates every printed subagent response. After the plan-review gate passes, the orchestrator **stops and offers the choice**: reply *continue* to proceed in the same context, or `/clear` and then `/ed3d-orchestrate:orchestrate resume` to continue with a fresh context — the loop records its full position in the state file (`phase`, `plan_path`, the review block), and completed phases are never repeated. You can also `/clear` + resume at any other phase boundary on your own initiative; the state file is current at every transition.
+Builders and reviewers run in isolated subagent contexts, but the orchestrating session accumulates every printed subagent response. After the plan-review gate passes, the orchestrator **stops and offers the choice**: reply *continue* to proceed in the same context, or `/clear` and then resume to continue with a fresh context — the loop records its full position in the state file (`phase`, `plan_path`, the SHAs, the review block), and completed phases are never repeated.
+
+After `/clear`, run `/ed3d-orchestrate:orchestrate` with no arguments — when a state file exists with an in-progress loop, the command auto-resumes from the recorded phase and reports where the loop stands (0.3.1). The explicit `resume` argument still works, and you can `/clear` + resume at any other phase boundary on your own initiative; the state file is current at every transition.
 
 ## Known Limitations
 
 - Facet discipline (e.g. read-only planning) is enforced by instruction, not by harness. The guardrail hook narrows this gap only for the review loop.
+- The hook's stale-verdict scan is a heuristic: it searches the transcript tail for the adversary's verdict strings. In a very long single session that starts a second orchestrate task after a SHIPed first one, a stale verdict match can block with a misplaced commit instruction; the 7-block cap bounds the loop, but obeying the instruction on a stale match would write a terminal SHIP into the new task's fresh review state, silently skipping its review. `/clear` between tasks avoids it entirely; the precise fix — a per-loop nonce echoed in the adversary's verdict block — is deferred (see ROADMAP).
 - Frontmatter `model` bindings may be ignored by older Copilot builds — verify with a spot-check of an adversary dispatch, and use the settings.json override if needed.
 - Parallel dispatch can trip provider rate limits; the skills fall back to serial/small-batch dispatch on rate-limit errors.
 - Per-dispatch model selection is the operative binding layer on current builds; if the skills' pinned model ids drift from your catalog (`kimi-k3`, `gpt-5.6-luna`, `gemini-3.5-flash`), correct the ids in the skill dispatch templates or via `/subagents`.

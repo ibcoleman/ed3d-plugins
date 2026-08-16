@@ -18,6 +18,8 @@ At loop start, create `.ed3d/orchestrate-state.json` in the working directory of
 {
   "task": "one-line description of the task",
   "plan_path": null,
+  "base_sha": null,
+  "head_sha": null,
   "phase": "research",
   "review": {
     "active": false,
@@ -40,11 +42,13 @@ The review block's `history` field is the append-only round record:
 ]
 ```
 
+- Before Phase 1, verify the git baseline: the working directory must be inside a local git repository with at least one commit. If no git repo exists and the directory is empty or the task is to create a new project, run `git init`, create a minimal initial commit, and record its SHA as `base_sha`. If no git repo exists in a non-empty directory, ask before initializing. If a git repo exists but has no commits, create an initial commit before implementation. Do not enter Phase 4 without a valid `base_sha`.
 - Update `phase` at every phase transition: `research` → `plan` → `execute` → `review`.
+- Record `base_sha` immediately before dispatching builders in Phase 4, and record `head_sha` immediately after all builder work is committed. Both must be valid commits in the current repo before Phase 5 starts.
 - The `adversarial-review` skill owns the review block during the dryer; when it activates the loop it sets `review.active: true`, `round: 1`. That skill also owns `history` appends — one entry per completed round (`critical_high` / `advisory` are the counts of findings at those severities in that round's report). Entries are append-only, never rewritten; an optional `note` string is the entry schema's only sanctioned extension point; create the array if it is absent (in-flight 0.2.x state files predate it). Rounds legitimately split across `/clear`+resume session boundaries, so per-session dispatch counts undercount the loop — `history` is the authoritative round count for the final report (the round count is the highest `round` value in `history`, not its length — a protocol-failure `PENDING` entry shares its round number).
 - Handle `consecutive_blocks` correctly in every rewrite: the guardrail hook (`check-review-loop.py`) increments it each time it blocks a stop; reset it to 0 whenever the loop makes progress (round advanced, verdict changed, or findings changed). Dropping the key weakens the hook's stop protection.
 - **A verdict that is not in the state file does not exist.** No stop, no operator report, no dispatch may occur between parsing a verdict and committing it to the state file — one turn, both actions. The guardrail reads the file, not your intentions.
-- On completion (SHIP or operator-accepted), set `review.active: false` and leave the final `verdict` in place. The state file is the audit trail — the operator can reconstruct every transition from it after the fact.
+- On completion (SHIP or operator-accepted), set `review.active: false`, reset `consecutive_blocks: 0`, and leave the final `verdict` in place. The state file is the audit trail — the operator can reconstruct every transition from it after the fact.
 
 ## Phase 1: Research
 
@@ -91,11 +95,12 @@ Subagents run in isolated context windows, but **your** context accumulates ever
 
 **Mandatory:** when the plan-review gate passes, before dispatching ANY builder:
 
-1. Update the state file: `phase: "execute"` and `plan_path` set to the plan document's absolute path.
-2. **End your turn** and present to the operator:
+1. Verify the git baseline again. If no valid `HEAD` commit exists, create an initial commit now before proceeding.
+2. Record `base_sha` in the state file from the current `HEAD` commit, then update the state file: `phase: "execute"` and `plan_path` set to the plan document's absolute path.
+3. **End your turn** and present to the operator:
    - the plan-review verdict, in one or two lines, and
    - the choice: reply **continue** to start the builders in this context, or run `/clear` and then `/ed3d-orchestrate:orchestrate resume` to continue with a fresh context.
-3. Do not dispatch builders in the same turn in which the gate passed. This stop is safe: the guardrail hook only blocks stops while the review loop is active, which it is not yet.
+4. Do not dispatch builders in the same turn in which the gate passed. This stop is safe: the guardrail hook only blocks stops while the review loop is active, which it is not yet.
 
 On resume, the loop reads the state file (`phase: "execute"`) and the plan document at `plan_path` and starts Phase 4 directly. Completed phases are never repeated; nothing is lost to `/clear` — the plan, the commits, and the state file all live on disk.
 
@@ -103,7 +108,7 @@ The operator may also `/clear` + resume at any other phase boundary on their own
 
 ## Phase 4: Execute
 
-If you are resuming into this phase (`phase: "execute"` in the state file), read the plan document at `plan_path` first, then continue from here.
+If you are resuming into this phase (`phase: "execute"` in the state file), read the plan document at `plan_path` first, then continue from here. Before dispatching any builder, verify `base_sha` exists in the state file and is a valid commit in the current repo; if it is missing, set it from the current `HEAD` before any implementation changes.
 
 Fan out builders. One bounded task per dispatch — a builder gets a task it can complete fully with tests and a commit.
 
@@ -118,13 +123,15 @@ Fan out builders. One bounded task per dispatch — a builder gets a task it can
 - After EVERY subagent completes, print its **full response** before taking any other action. No summarizing, no paraphrasing. Include test counts, issue lists, commit hashes, error messages. Exception: in the review loop, the verdict's state-file commit happens in the same turn, immediately before printing — the guardrail reads the file, not the transcript.
 - Before every dispatch, say in 2–3 sentences what you're asking the agent to do and which phase it covers.
 
-Update state: `phase: "review"` when all builders have reported (`phase: "execute"` is set earlier, at the context-handoff gate).
+After all builders have reported, ensure implementation work is committed, record `head_sha` from the current `HEAD`, and verify `base_sha` and `head_sha` are both valid commits and differ unless the operator explicitly accepted a no-op task. Then update state: `phase: "review"` (`phase: "execute"` is set earlier, at the context-handoff gate).
 
 ## Phase 5: Tumble Dryer
 
-Engage the `adversarial-review` skill (ed3d-orchestrate). It runs the review loop: adversary dispatch → verdict → fix critical/high → re-review, until SHIP or the round cap, then the operator circuit-breaker. The guardrail hook will block premature session stops while `review.active` is true — that is by design; finish the loop or circuit-break properly rather than fighting the hook.
+Engage the `adversarial-review` skill (ed3d-orchestrate) only after verifying `base_sha` and `head_sha` are valid commits. It runs the review loop: adversary dispatch → verdict → fix critical/high → re-review, until SHIP or the round cap, then the operator circuit-breaker. The guardrail hook will block premature session stops while `review.active` is true — that is by design; if it blocks after an adversary verdict, commit the verdict to the state file immediately, including `consecutive_blocks: 0`, rather than fighting the hook.
 
 ## Phase 6: Assemble and Report
+
+Before the final report, re-read `.ed3d/orchestrate-state.json` and verify the terminal state: `review.active: false`, `review.verdict: "SHIP"`, `review.consecutive_blocks: 0`, and the highest-round `review.history` entry matches the final verdict. If any check fails, fix the state file before reporting or stopping.
 
 Final report to the operator:
 
@@ -146,5 +153,7 @@ Final report to the operator:
 | "The adversary didn't mention the prior issue, so it's fixed" | No. Silence is not confirmation. Carry it forward until explicitly confirmed fixed. |
 | "Medium/low findings — I'll fix them all anyway to be safe" | Your call, but not required — this loop ships with advisory findings listed. Don't burn rounds on them. |
 | "The stop hook keeps blocking; I'll just keep stopping" | The hook blocks while the review loop is active. Finish the loop (SHIP) or circuit-break (round > max_rounds, operator decides). |
-| "I got VERDICT: SHIP — the loop is done, I'll report and stop" | No. Commit the verdict to the state file in the same turn first. A SHIP that the file doesn't record turns into guardrail blocks that leak into your reviewers' context. |
+| "I got VERDICT: SHIP — the loop is done, I'll report and stop" | No. Commit the verdict to the state file in the same turn first, reset `consecutive_blocks` to 0, re-read the state file, and only then report. A SHIP that the file doesn't record turns into guardrail blocks that leak into your reviewers' context. |
+| "No argument was provided, so I need a new task" | Not if a state file exists. Resume the recorded loop first. |
+| "The project exists now, so review can compare commits" | Not unless `base_sha` and `head_sha` are valid commits. Create/record the baseline before implementation and verify both SHAs before review. |
 | "I'll dispatch a builder from a builder" | No. No nested subagents. Ever. You dispatch; they work and return. |

@@ -1,5 +1,19 @@
 # Changelog
 
+## [ed3d-orchestrate] [0.3.1]
+
+Hardens the review-loop protocol after live validation of 0.3.0 on a real Copilot run.
+
+**Fixed:**
+- Stale verdict state: the stop hook now scans the stop event's transcript tail; when the adversary already rendered `VERDICT: SHIP` but the state file still says `PENDING`/active, the hook blocks with explicit commit instructions (counted toward the 7-block safety cap, which bounds any stale-match false positive) instead of letting block-spam repeat
+- Terminal-state consistency: a final `SHIP` only allows a stop when `review.active: false`, `verdict: "SHIP"`, and `consecutive_blocks: 0` all hold; an inconsistent final state blocks with repair instructions, bounded by the safety cap
+- Git baseline: the loop requires a local git repository with at least one commit — new/empty projects get `git init` + a baseline commit before implementation; `base_sha`/`head_sha` are recorded in the state file and verified before adversarial review starts
+- Bare `/orchestrate` after `/clear` auto-resumes when an in-progress state file exists (reports task/phase/plan) instead of asking for a new task
+
+**Changed:**
+- Verdict commit is now an explicit checklist ending with a re-read verification of the written state
+- The final report requires re-reading the state file and verifying the terminal state before reporting
+
 ## [ed3d-orchestrate] [0.3.0]
 
 Hardens the adversarial review loop after a forensic pass over Copilot session logs.

@@ -117,6 +117,24 @@ def case(name, state, payload_template, use_subdir=False):
     return tmp, state_path, code, stdout, decision
 
 
+def case_with_transcript(name, state, transcript_text, payload_template=CAMEL_EVENT):
+    tmp, state_path, workdir = make_tmp(state)
+    transcript_path = os.path.join(tmp, "transcript.jsonl")
+    with open(transcript_path, "w", encoding="utf-8") as handle:
+        handle.write(transcript_text)
+    payload_json = json.loads(payload_template.replace("__CWD__", workdir))
+    payload_json["transcriptPath"] = transcript_path
+    payload_json["transcript_path"] = transcript_path
+    code, stdout = run_hook(json.dumps(payload_json), workdir)
+    decision = None
+    if stdout.strip():
+        try:
+            decision = parse_decision(stdout)
+        except Exception:
+            decision = None
+    return tmp, state_path, code, stdout, decision
+
+
 def cleanup(tmp):
     shutil.rmtree(tmp, ignore_errors=True)
 
@@ -148,8 +166,12 @@ def main():
     check("review.active false -> silent allow", code == 0 and stdout == "")
     cleanup(tmp)
 
-    tmp, _, code, stdout, _ = case("verdict SHIP", active_review(round_=2, verdict="SHIP"), CAMEL_EVENT)
-    check("verdict SHIP -> silent allow", code == 0 and stdout == "")
+    tmp, _, code, stdout, _ = case(
+        "terminal SHIP consistent",
+        {"task": "t", "phase": "review", "review": {"active": False, "round": 2, "max_rounds": 3, "verdict": "SHIP", "consecutive_blocks": 0}},
+        CAMEL_EVENT,
+    )
+    check("terminal SHIP + consecutive_blocks 0 -> silent allow", code == 0 and stdout == "")
     cleanup(tmp)
 
     tmp, _, code, stdout, _ = case(
@@ -282,6 +304,123 @@ def main():
     check("7 consecutive blocks -> allow with warning (never hard-lock)", ok, "stdout=%r" % stdout)
     cleanup(tmp)
 
+    print("0.3.1 verdict-state enforcement cases")
+    tmp, _, code, stdout, decision = case(
+        "terminal SHIP nonzero consecutive_blocks",
+        {"task": "t", "phase": "review", "review": {"active": False, "round": 1, "max_rounds": 3, "verdict": "SHIP", "consecutive_blocks": 1}},
+        CAMEL_EVENT,
+    )
+    ok = (
+        code == 0
+        and decision is not None
+        and decision.get("decision") == "block"
+        and "final SHIP state is inconsistent" in decision.get("reason", "")
+        and "consecutive_blocks=0" in decision.get("reason", "")
+    )
+    check("terminal SHIP + consecutive_blocks != 0 -> block for state repair", ok, "stdout=%r" % stdout)
+    cleanup(tmp)
+
+    tmp, _, code, stdout, decision = case(
+        "terminal SHIP inconsistent at cap",
+        {"task": "t", "phase": "review", "review": {"active": False, "round": 1, "max_rounds": 3, "verdict": "SHIP", "consecutive_blocks": 7}},
+        CAMEL_EVENT,
+    )
+    ok = (
+        code == 0
+        and decision is not None
+        and decision.get("decision") == "allow"
+        and "7 consecutive blocks reached with an inconsistent final SHIP state" in decision.get("reason", "")
+    )
+    check("terminal SHIP inconsistent + consecutive_blocks 7 -> allow (never-lock cap)", ok, "stdout=%r" % stdout)
+    cleanup(tmp)
+
+    tmp, state_path, code, stdout, decision = case(
+        "SHIP with active true",
+        {"task": "t", "phase": "review", "review": {"active": True, "round": 1, "max_rounds": 3, "verdict": "SHIP", "consecutive_blocks": 0}},
+        CAMEL_EVENT,
+    )
+    ok = (
+        code == 0
+        and decision is not None
+        and decision.get("decision") == "block"
+        and "final SHIP state is inconsistent" in decision.get("reason", "")
+    )
+    check("verdict SHIP + active true -> repair block", ok, "stdout=%r" % stdout)
+    after = read_state(state_path)
+    check("repair block increments consecutive_blocks", after["review"].get("consecutive_blocks") == 1, "state=%r" % after)
+    cleanup(tmp)
+
+    tmp, _, code, stdout, decision = case(
+        "terminal SHIP missing counter key",
+        {"task": "t", "phase": "review", "review": {"active": False, "round": 1, "max_rounds": 3, "verdict": "SHIP"}},
+        CAMEL_EVENT,
+    )
+    ok = (
+        code == 0
+        and decision is not None
+        and decision.get("decision") == "block"
+        and "final SHIP state is inconsistent" in decision.get("reason", "")
+    )
+    check("terminal SHIP + consecutive_blocks key absent -> repair block (fail closed)", ok, "stdout=%r" % stdout)
+    cleanup(tmp)
+
+    tmp, state_path, code, stdout, decision = case_with_transcript(
+        "transcript SHIP stale state",
+        active_review(round_=1, max_rounds=3, verdict="PENDING", consecutive=3),
+        "adversary output\nVERDICT: SHIP\nhas_critical_or_high: false\n",
+    )
+    ok = (
+        code == 0
+        and decision is not None
+        and decision.get("decision") == "block"
+        and "already rendered VERDICT: SHIP" in decision.get("reason", "")
+        and "consecutive_blocks=0" in decision.get("reason", "")
+    )
+    check("transcript SHIP + state PENDING -> block with commit instruction", ok, "stdout=%r" % stdout)
+    after = read_state(state_path)
+    check("transcript SHIP block increments consecutive_blocks (cap-bounded)", after["review"].get("consecutive_blocks") == 4, "state=%r" % after)
+    cleanup(tmp)
+
+    tmp, state_path, code, stdout, decision = case_with_transcript(
+        "transcript SHIP at cap",
+        active_review(round_=1, max_rounds=3, verdict="PENDING", consecutive=7),
+        "adversary output\nVERDICT: SHIP\nhas_critical_or_high: false\n",
+    )
+    ok = (
+        code == 0
+        and decision is not None
+        and decision.get("decision") == "allow"
+        and "7 consecutive blocks reached" in decision.get("reason", "")
+    )
+    check("transcript SHIP + consecutive_blocks 7 -> cap allow takes precedence", ok, "stdout=%r" % stdout)
+    after = read_state(state_path)
+    check("cap allow leaves state file unchanged", after["review"].get("consecutive_blocks") == 7, "state=%r" % after)
+    cleanup(tmp)
+
+    tmp, _, code, stdout, decision = case_with_transcript(
+        "transcript incomplete verdict",
+        active_review(round_=1, max_rounds=3, verdict="PENDING"),
+        "adversary output\nVERDICT: SHIP\n",
+    )
+    ok = code == 0 and decision is not None and decision.get("decision") == "block" and "already rendered VERDICT: SHIP" not in decision.get("reason", "")
+    check("transcript SHIP without has_critical_or_high false -> ordinary block", ok, "stdout=%r" % stdout)
+    cleanup(tmp)
+
+    tmp, _, code, stdout, decision = case_with_transcript(
+        "transcript SHIP beyond tail",
+        active_review(round_=1, max_rounds=3, verdict="PENDING"),
+        "VERDICT: SHIP\nhas_critical_or_high: false\n" + ("x" * (300 * 1024)),
+    )
+    ok = (
+        code == 0
+        and decision is not None
+        and decision.get("decision") == "block"
+        and "round 1 of 3" in decision.get("reason", "")
+        and "already rendered VERDICT: SHIP" not in decision.get("reason", "")
+    )
+    check("transcript SHIP older than 256KB tail -> ordinary block", ok, "stdout=%r" % stdout)
+    cleanup(tmp)
+
     print("history-bearing state cases (review.history schema)")
 
     def hist():
@@ -310,10 +449,10 @@ def main():
     )
     cleanup(tmp)
 
-    state = active_review(round_=1, verdict="SHIP")
+    state = {"task": "t", "phase": "review", "review": {"active": False, "round": 1, "max_rounds": 3, "verdict": "SHIP", "consecutive_blocks": 0}}
     state["review"]["history"] = hist()
-    tmp, state_path, code, stdout, _ = case("history + SHIP", state, CAMEL_EVENT)
-    check("history present + verdict SHIP -> silent allow", code == 0 and stdout == "", "code=%s stdout=%r" % (code, stdout))
+    tmp, state_path, code, stdout, _ = case("history + terminal SHIP", state, CAMEL_EVENT)
+    check("history present + terminal SHIP -> silent allow", code == 0 and stdout == "", "code=%s stdout=%r" % (code, stdout))
     check("SHIP allow leaves history untouched", read_state(state_path)["review"].get("history") == hist())
     cleanup(tmp)
 
