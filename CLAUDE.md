@@ -4,6 +4,10 @@ Claude Code plugins for design, implementation, and development workflows.
 
 ## Conventions
 
+### Consult ROADMAP.md Before Planning New Work
+
+`ROADMAP.md` at the repo root records deferred follow-ups and the next planned project, including empirical findings about external tools (paths, event schemas, version-specific behavior). When asked to plan or start new work on this repository, read it first. Update it when items land or new ones emerge.
+
 ### Task Invocations Use XML Syntax
 
 When documenting Task tool invocations in skills or agent prompts, use XML-style blocks:

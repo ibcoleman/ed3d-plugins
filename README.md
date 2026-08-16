@@ -87,6 +87,10 @@ These plugins are authored for Claude Code, but load under GitHub Copilot CLI as
 
 Run `python3 scripts/validate_plugins.py` (requires PyYAML) to check twin frontmatter, model bindings, and marketplace integrity.
 
+## Roadmap
+
+Deferred follow-ups and the next project — a subagent session watcher that renders Copilot's event stream live — live in [ROADMAP.md](ROADMAP.md). Consult it before planning new work here.
+
 ## Contributing
 Issues and pull requests gratefully solicited, except `ed3d-house-style` is _my_ house style, and provided for reference, so I might not take contributions there. (You can make your own house-style plugin though and use that instead!)
 
