@@ -57,7 +57,11 @@ Those bindings live in the `*.agent.md` twins shipped alongside each plugin's Cl
 
 ## Model Overrides
 
-Frontmatter `model` bindings are version-dependent in Copilot CLI — current builds ignore them for plugin agents. The authoritative override is `~/.copilot/settings.json` (user settings; `config.json` is managed automatically) under `subagents.agents`, keyed by bare agent name (unambiguous where the name is unique across installed plugins):
+There are three binding layers; they do not behave symmetrically on current builds (verified on Copilot CLI 1.0.80):
+
+1. **Per-dispatch parameters (operative layer).** Copilot's subagent dispatch accepts `model` and `reasoning_effort` arguments on each dispatch, and these take precedence over everything else. The orchestrating model will pick values on its own if the skill doesn't pin them — including unsupported combinations (e.g. `gpt-5.4` + `reasoning_effort: minimal`) that fail the dispatch. This plugin's skills therefore pin them explicitly on every dispatch: reviewers `kimi-k3`/`high`, builders and scouts `gpt-5.6-luna`/`low`-`medium`, with `gemini-3.5-flash` as the documented availability fallback for luna-bound agents.
+2. **`~/.copilot/settings.json` → `subagents.agents.<name>`** (per the Copilot config-dir reference: `model`/`effortLevel`/`contextTier`). Documented, but hand-edits have produced fallback-to-default behavior on 1.0.80 — prefer the `/subagents` picker, which persists this config in the schema the CLI actually reads.
+3. **Agent frontmatter `model`** — version-dependent and, on 1.0.80 with pinned dispatch params, overridden. The twins carry it as declarative documentation of the intended binding.
 
 ```json
 {
@@ -72,7 +76,7 @@ Frontmatter `model` bindings are version-dependent in Copilot CLI — current bu
 }
 ```
 
-**Availability fallback:** when the luna tier is rate-limited (observed in practice), rebind the luna-bound agents to `gemini-3.7-flash` via the same override block. Decorrelation is preserved — reviewers stay on `kimi-k3`.
+**Availability fallback:** when the luna tier is rate-limited (observed in practice), rebind the luna-bound agents to `gemini-3.5-flash` — either via the dispatch parameters (skills) or the settings block above. Decorrelation is preserved — reviewers stay on `kimi-k3`.
 
 `gpt-5.3-codex` is a reasonable alternative binding for the builder agents if luna is unavailable and flash is too weak for implementation work.
 
@@ -149,3 +153,4 @@ Watch `.ed3d/orchestrate-state.json` as the loop runs — phase and review trans
 - Facet discipline (e.g. read-only planning) is enforced by instruction, not by harness. The guardrail hook narrows this gap only for the review loop.
 - Frontmatter `model` bindings may be ignored by older Copilot builds — verify with a spot-check of an adversary dispatch, and use the settings.json override if needed.
 - Parallel dispatch can trip provider rate limits; the skills fall back to serial/small-batch dispatch on rate-limit errors.
+- Per-dispatch model selection is the operative binding layer on current builds; if the skills' pinned model ids drift from your catalog (`kimi-k3`, `gpt-5.6-luna`, `gemini-3.5-flash`), correct the ids in the skill dispatch templates or via `/subagents`.

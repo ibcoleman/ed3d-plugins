@@ -28,6 +28,10 @@ Effort levels:
 
 ## Step 2: Dispatch the Scouts
 
+Copilot's subagent dispatch accepts per-dispatch `model` and `reasoning_effort` parameters, and they take precedence over agent frontmatter and `/subagents` defaults. **Always pin them explicitly** — the orchestrating model will otherwise pick models on its own (typically downgrading scouts is harmless, but the habit must be deliberate, not accidental).
+
+**Scout dispatch parameters:** `model: gpt-5.6-luna`, `reasoning_effort: low`. When luna is rate-limited or unavailable, use `model: gemini-3.5-flash` instead (cheap and fast is the point for scouts).
+
 Match each focus area to the best researcher agent. Reference agents by both bare and qualified name in your dispatch so they resolve under any install:
 
 - `codebase-investigator` (ed3d-research-agents) — codebase state, existing patterns

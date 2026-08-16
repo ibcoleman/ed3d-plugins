@@ -33,7 +33,9 @@ Drive adversarial review rounds over completed implementation work. This skill i
 
 ### 1. Dispatch the Adversary
 
-Dispatch `adversary` (ed3d-orchestrate) with:
+Copilot's subagent dispatch accepts per-dispatch `model` and `reasoning_effort` parameters, and they take precedence over agent frontmatter and `/subagents` defaults. **Always pin them.**
+
+Dispatch `adversary` (ed3d-orchestrate) with `model: kimi-k3`, `reasoning_effort: high`, and:
 
 ```
 WHAT_WAS_IMPLEMENTED: [summary of the work]
@@ -68,7 +70,7 @@ Update the state file: `verdict`, `open_critical_high` (the list of open critica
 **`VERDICT: FIX-FIRST` with critical/high open:**
 
 - If `round < max_rounds`:
-  1. Dispatch `task-bug-fixer` (ed3d-plan-and-execute) with the open critical/high findings, verbatim. **Print its full response.**
+  1. Dispatch `task-bug-fixer` (ed3d-plan-and-execute) with `model: gpt-5.6-luna`, `reasoning_effort: medium` (use `gemini-3.5-flash` if luna is rate-limited), passing the open critical/high findings, verbatim. **Print its full response.**
   2. Set `round` to `round + 1` in the state file.
   3. Re-dispatch the adversary with `PRIOR_ISSUES` set to the previous round's open findings.
   4. **Silence is not fixed.** In the new review, any prior issue the adversary does not explicitly confirm fixed with evidence stays on the open list. Carry it forward.
