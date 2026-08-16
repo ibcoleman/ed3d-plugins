@@ -1,5 +1,19 @@
 # Changelog
 
+## [ed3d-orchestrate] [0.3.0]
+
+Hardens the adversarial review loop after a forensic pass over Copilot session logs.
+
+**Fixed:**
+- Orchestrator verdict write-back: verdicts must be committed to `.ed3d/orchestrate-state.json` in the same turn they are parsed — eliminates guardrail blocks on already-SHIPped loops and block-spam leaking into adversary context
+- Resume reconciliation: a verdict present in the transcript but absent from the state file is written before any new dispatch
+
+**New:**
+- `review.history` append-only per-round record in the state file (survives `/clear`+resume; authoritative round count for the final report)
+- Adversary no-writes rule (never writes state, working tree, or commits)
+- Hook regression tests for history-bearing state files
+- `scripts/validate_plugins.py` now runs stdlib-only (PyYAML no longer required) and durably checks the new protocol prose
+
 ## [ed3d-orchestrate] [0.2.1]
 
 The context handoff is now a mandatory stop instead of an advisory note.

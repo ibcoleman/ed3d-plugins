@@ -23,11 +23,25 @@ Drive adversarial review rounds over completed implementation work. This skill i
   "max_rounds": 3,
   "verdict": "PENDING",
   "open_critical_high": [],
-  "consecutive_blocks": 0
+  "consecutive_blocks": 0,
+  "history": []
 }
 ```
 
+- **Resume reconciliation.** If resuming into an active review (`review.active: true` on resume), reconcile first: any verdict already rendered in this session's transcript but absent from the state file must be written to the state file before any new dispatch. Do not dispatch a fresh adversary to "check" a verdict the transcript already contains. (This recovers same-session omissions only — after `/clear` the transcript is gone, the state file is the sole truth, and a stale `PENDING` on an already-completed loop can then only be caught by the operator or the round history.)
+
 `max_rounds` defaults to 3; the operator can change it in the state file at any time.
+
+`review.history` is the append-only round record (create the array if the state file predates it — in-flight 0.2.x state files do):
+
+```json
+"history": [
+  {"round": 1, "verdict": "FIX-FIRST", "critical_high": 1, "advisory": 6},
+  {"round": 2, "verdict": "SHIP", "critical_high": 0, "advisory": 0}
+]
+```
+
+`critical_high` / `advisory` are the counts of findings at those severities in that round's report. Entries are append-only — never rewrite prior entries. An optional `note` string is the entry schema's only sanctioned extension point; no other keys. Rounds legitimately split across `/clear`+resume session boundaries, so per-session dispatch counts undercount the loop; `history` is the authoritative round count for the final report. The round count is the highest `round` value in `history`, not its length — a round can legitimately hold more than one entry (a protocol-failure `PENDING` followed by that round's actual verdict).
 
 ## The Loop
 
@@ -47,9 +61,9 @@ PRIOR_ISSUES:
 [verbatim list of open findings from the previous round]
 ```
 
-**Print the adversary's full response** before doing anything with it.
+**Print the adversary's full response** immediately after committing the verdict to the state file (step 2), before branching on it.
 
-### 2. Parse the Verdict
+### 2. Parse the Verdict, Commit the State
 
 From the response, extract:
 
@@ -57,15 +71,24 @@ From the response, extract:
 - `has_critical_or_high: true|false`
 - The findings list
 
-If the response contains no parseable verdict block, treat it as a protocol failure: re-dispatch once with an instruction to end with the verdict block exactly as specified. If it fails again, treat as FIX-FIRST with a high finding ("adversary protocol failure") and surface to the operator.
+Then **immediately, in the same assistant turn**, rewrite `.ed3d/orchestrate-state.json`:
 
-Update the state file: `verdict`, `open_critical_high` (the list of open critical/high finding one-liners), and `consecutive_blocks: 0` — the guardrail hook increments that counter each time it blocks a stop, and every update you make here is progress, which resets it.
+- `verdict` — the parsed verdict
+- `open_critical_high` — the list of open critical/high finding one-liners
+- `consecutive_blocks: 0` — the guardrail hook increments that counter each time it blocks a stop, and every verdict you commit here is progress, which resets it
+- `review.history` — append this round's entry (`{"round": N, "verdict": ..., "critical_high": C, "advisory": A}`); create the array first if the state file predates it
+
+Only after the state file is committed: print the adversary's full response, then branch on the verdict (step 3).
+
+**A verdict that is not in the state file does not exist.** No stop, no operator report, no dispatch may occur between parsing a verdict and committing it to the state file — one turn, both actions. The guardrail reads the file, not your intentions.
+
+If the response contains no parseable verdict block, treat it as a protocol failure: re-dispatch once with an instruction to end with the verdict block exactly as specified. The protocol failure commits too — leave `verdict: "PENDING"` unchanged, reset `consecutive_blocks: 0`, and append a history entry of exactly `{"round": N, "verdict": "PENDING", "critical_high": 0, "advisory": 0, "note": "adversary protocol failure"}`, so the reset is still progress-tracked. If it fails again, treat as FIX-FIRST with a high finding ("adversary protocol failure") and surface to the operator.
 
 ### 3. Branch on the Verdict
 
 **`VERDICT: SHIP`** (no open critical/high):
-- Set `review.active: false`, keep `verdict: "SHIP"` as the final state.
-- Report the round count and any advisory (medium/low) findings left unfixed. Done.
+- Set `review.active: false` in the same state write as (or immediately after) step 2's commit, keeping `verdict: "SHIP"` as the final state. Do not append a second `history` entry for this round — step 2 already appended it.
+- Then report the round count (authoritative source: `review.history`) and any advisory (medium/low) findings left unfixed. Done.
 
 **`VERDICT: FIX-FIRST` with critical/high open:**
 

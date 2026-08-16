@@ -3,7 +3,7 @@
 
 Checks (strict - failures exit 1):
   1. The 14 Copilot-native agent twins exist, with:
-     - strict-quoted frontmatter (parseable YAML; every scalar quoted or a
+     - strict-quoted frontmatter (parseable; every scalar quoted or a
        bare true/false/null/number)
      - name matching the filename stem
      - a non-empty description with no <example>/<commentary> markup
@@ -14,28 +14,23 @@ Checks (strict - failures exit 1):
        no-nested-subagent line
   2. No <example>/<commentary> markup in any .agent.md in the repo
   3. plugins/ed3d-orchestrate/ agent/skill/command frontmatter is strict
-     (including commands/orchestrate.md), and the review-policy strings and
-     verdict markers exist in the adversary agent + adversarial-review skill
+     (including commands/orchestrate.md), and the review-policy/protocol
+     strings (verdict markers, verdict write-back atomicity, review.history
+     schema, adversary no-writes rule) exist in the adversary agent and
+     both loop skills
   4. .claude-plugin/marketplace.json parses, contains an ed3d-orchestrate
      entry whose source resolves, and every plugin source resolves
 
 Warnings (do not affect exit status): pre-existing markdown frontmatter
 outside the strict set that fails parse or quoting lint.
 
-PyYAML is required for this script only:
-    pip install pyyaml
+Zero external dependencies (stdlib only): the frontmatter parser is built
+in and handles exactly the scalar grammar the strict set uses.
 """
 import json
 import os
 import re
 import sys
-
-try:
-    import yaml
-except ImportError:
-    print("error: PyYAML is required for scripts/validate_plugins.py")
-    print("       install it with: pip install pyyaml")
-    sys.exit(1)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SANCTIONED_LINE = "Do not dispatch or invoke subagents; return directly to your caller."
@@ -74,10 +69,32 @@ POLICY_TARGETS = {
     "plugins/ed3d-orchestrate/agents/adversary.agent.md": [
         "critical", "high", "medium", "low",
         "VERDICT: SHIP", "VERDICT: FIX-FIRST", "has_critical_or_high",
+        # no-writes rule (0.3.0): the adversary never maintains loop state
+        "you never write `.ed3d/orchestrate-state.json`, never modify the working tree, never commit",
     ],
     "plugins/ed3d-orchestrate/skills/adversarial-review/SKILL.md": [
         "critical", "high", "medium", "low",
         "VERDICT: SHIP", "VERDICT: FIX-FIRST", "max_rounds",
+        # verdict write-back atomicity (0.3.0): commit in the same turn as parsing
+        "A verdict that is not in the state file does not exist",
+        "The guardrail reads the file, not your intentions",
+        # review.history round record (0.3.0)
+        '"history": [',
+        '{"round": 1, "verdict": "FIX-FIRST", "critical_high": 1, "advisory": 6}',
+        '{"round": 2, "verdict": "SHIP", "critical_high": 0, "advisory": 0}',
+        '{"round": N, "verdict": "PENDING", "critical_high": 0, "advisory": 0, "note": "adversary protocol failure"}',
+        # resume reconciliation (0.3.0)
+        "Resume reconciliation",
+    ],
+    "plugins/ed3d-orchestrate/skills/orchestrating-the-loop/SKILL.md": [
+        # verdict write-back atomicity (0.3.0)
+        "A verdict that is not in the state file does not exist",
+        "The guardrail reads the file, not your intentions",
+        "Commit the verdict to the state file in the same turn first",
+        # review.history round record (0.3.0)
+        '"history": [',
+        '{"round": 1, "verdict": "FIX-FIRST", "critical_high": 1, "advisory": 6}',
+        '{"round": 2, "verdict": "SHIP", "critical_high": 0, "advisory": 0}',
     ],
 }
 
@@ -118,22 +135,52 @@ def split_frontmatter(text, path):
     return None, None
 
 
+def decode_scalar(raw):
+    """Decode a frontmatter scalar per the grammar QUOTED_VALUE enforces."""
+    if raw == "true":
+        return True
+    if raw == "false":
+        return False
+    if raw == "null":
+        return None
+    if raw.startswith('"') and raw.endswith('"'):
+        try:
+            return json.loads(raw)
+        except ValueError:
+            return raw[1:-1]
+    if raw.startswith("'") and raw.endswith("'"):
+        return raw[1:-1].replace("''", "'")
+    try:
+        return int(raw)
+    except ValueError:
+        return float(raw)
+
+
 def lint_frontmatter(fm_text, path, strict):
-    """Parse + quoting lint. Returns parsed dict or None."""
+    """Lint + parse flat scalar frontmatter (stdlib only, no PyYAML).
+
+    The grammar is exactly the frontmatter shape the strict set uses: one
+    ``key: value`` scalar (or bare ``key:``) per line. Lines outside that
+    grammar are reported as problems; keys whose own line is well-formed
+    still parse. Returns the parsed dict, or None when nothing parsed.
+    """
     problems = []
+    parsed = {}
     for line in fm_text.split("\n"):
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
-        if not (QUOTED_VALUE.match(line) or KEY_ONLY.match(line)):
-            problems.append("unquoted or non-scalar frontmatter value: %r" % line)
-    try:
-        parsed = yaml.safe_load(fm_text)
-    except yaml.YAMLError as exc:
-        problems.append("YAML parse error: %s" % str(exc).split("\n")[0])
-        parsed = None
-    if parsed is not None and not isinstance(parsed, dict):
-        problems.append("frontmatter is not a mapping")
+        match = QUOTED_VALUE.match(line)
+        if match:
+            key = line.split(":", 1)[0].strip()
+            parsed[key] = decode_scalar(match.group(1))
+            continue
+        if KEY_ONLY.match(line):
+            key = line.split(":", 1)[0].strip()
+            parsed[key] = None
+            continue
+        problems.append("unquoted or non-scalar frontmatter value: %r" % line)
+    if not parsed:
         parsed = None
     for problem in problems:
         (fail if strict else warn)("%s: %s" % (path, problem))

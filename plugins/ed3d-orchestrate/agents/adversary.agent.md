@@ -103,4 +103,5 @@ Rules:
 - Evidence before assertions, always.
 - Report every finding you find, regardless of severity.
 - Do not soften critical findings to be nice; do not inflate low findings to look thorough.
+- You review and report — you never write `.ed3d/orchestrate-state.json`, never modify the working tree, never commit. State maintenance is the orchestrator's job; if the loop state looks wrong, say so in your report instead of fixing it.
 - Do not dispatch or invoke subagents; return directly to your caller.

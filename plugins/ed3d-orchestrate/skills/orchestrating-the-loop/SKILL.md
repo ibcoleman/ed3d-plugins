@@ -25,14 +25,25 @@ At loop start, create `.ed3d/orchestrate-state.json` in the working directory of
     "max_rounds": 3,
     "verdict": "PENDING",
     "open_critical_high": [],
-    "consecutive_blocks": 0
+    "consecutive_blocks": 0,
+    "history": []
   }
 }
 ```
 
+The review block's `history` field is the append-only round record:
+
+```json
+"history": [
+  {"round": 1, "verdict": "FIX-FIRST", "critical_high": 1, "advisory": 6},
+  {"round": 2, "verdict": "SHIP", "critical_high": 0, "advisory": 0}
+]
+```
+
 - Update `phase` at every phase transition: `research` → `plan` → `execute` → `review`.
-- The `adversarial-review` skill owns the review block during the dryer; when it activates the loop it sets `review.active: true`, `round: 1`.
+- The `adversarial-review` skill owns the review block during the dryer; when it activates the loop it sets `review.active: true`, `round: 1`. That skill also owns `history` appends — one entry per completed round (`critical_high` / `advisory` are the counts of findings at those severities in that round's report). Entries are append-only, never rewritten; an optional `note` string is the entry schema's only sanctioned extension point; create the array if it is absent (in-flight 0.2.x state files predate it). Rounds legitimately split across `/clear`+resume session boundaries, so per-session dispatch counts undercount the loop — `history` is the authoritative round count for the final report (the round count is the highest `round` value in `history`, not its length — a protocol-failure `PENDING` entry shares its round number).
 - Handle `consecutive_blocks` correctly in every rewrite: the guardrail hook (`check-review-loop.py`) increments it each time it blocks a stop; reset it to 0 whenever the loop makes progress (round advanced, verdict changed, or findings changed). Dropping the key weakens the hook's stop protection.
+- **A verdict that is not in the state file does not exist.** No stop, no operator report, no dispatch may occur between parsing a verdict and committing it to the state file — one turn, both actions. The guardrail reads the file, not your intentions.
 - On completion (SHIP or operator-accepted), set `review.active: false` and leave the final `verdict` in place. The state file is the audit trail — the operator can reconstruct every transition from it after the fact.
 
 ## Phase 1: Research
@@ -104,7 +115,7 @@ Fan out builders. One bounded task per dispatch — a builder gets a task it can
 **Transparency rules (inherited from executing-an-implementation-plan):**
 
 - The human cannot see what subagents return. You are their window into the work.
-- After EVERY subagent completes, print its **full response** before taking any other action. No summarizing, no paraphrasing. Include test counts, issue lists, commit hashes, error messages.
+- After EVERY subagent completes, print its **full response** before taking any other action. No summarizing, no paraphrasing. Include test counts, issue lists, commit hashes, error messages. Exception: in the review loop, the verdict's state-file commit happens in the same turn, immediately before printing — the guardrail reads the file, not the transcript.
 - Before every dispatch, say in 2–3 sentences what you're asking the agent to do and which phase it covers.
 
 Update state: `phase: "review"` when all builders have reported (`phase: "execute"` is set earlier, at the context-handoff gate).
@@ -135,4 +146,5 @@ Final report to the operator:
 | "The adversary didn't mention the prior issue, so it's fixed" | No. Silence is not confirmation. Carry it forward until explicitly confirmed fixed. |
 | "Medium/low findings — I'll fix them all anyway to be safe" | Your call, but not required — this loop ships with advisory findings listed. Don't burn rounds on them. |
 | "The stop hook keeps blocking; I'll just keep stopping" | The hook blocks while the review loop is active. Finish the loop (SHIP) or circuit-break (round > max_rounds, operator decides). |
+| "I got VERDICT: SHIP — the loop is done, I'll report and stop" | No. Commit the verdict to the state file in the same turn first. A SHIP that the file doesn't record turns into guardrail blocks that leak into your reviewers' context. |
 | "I'll dispatch a builder from a builder" | No. No nested subagents. Ever. You dispatch; they work and return. |

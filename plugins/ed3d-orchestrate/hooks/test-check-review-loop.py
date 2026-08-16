@@ -282,6 +282,54 @@ def main():
     check("7 consecutive blocks -> allow with warning (never hard-lock)", ok, "stdout=%r" % stdout)
     cleanup(tmp)
 
+    print("history-bearing state cases (review.history schema)")
+
+    def hist():
+        # fresh fixture per case, so one case can never mutate another's baseline
+        return [
+            {"round": 1, "verdict": "FIX-FIRST", "critical_high": 1, "advisory": 6},
+            {"round": 2, "verdict": "PENDING", "critical_high": 0, "advisory": 0, "note": "adversary protocol failure"},
+        ]
+
+    state = active_review(round_=3, max_rounds=3, verdict="PENDING", findings=None)
+    state["review"]["history"] = hist()
+    tmp, state_path, code, stdout, decision = case("history + active PENDING", state, CAMEL_EVENT)
+    ok = (
+        code == 0
+        and decision is not None
+        and decision.get("decision") == "block"
+        and "round 3 of 3" in decision.get("reason", "")
+    )
+    check("history present + PENDING in budget -> still blocks", ok, "stdout=%r" % stdout)
+    after = read_state(state_path)
+    check(
+        "block rewrite preserves review.history (only consecutive_blocks mutates)",
+        after["review"].get("history") == hist()
+        and after["review"].get("consecutive_blocks") == 1,
+        "state=%r" % after,
+    )
+    cleanup(tmp)
+
+    state = active_review(round_=1, verdict="SHIP")
+    state["review"]["history"] = hist()
+    tmp, state_path, code, stdout, _ = case("history + SHIP", state, CAMEL_EVENT)
+    check("history present + verdict SHIP -> silent allow", code == 0 and stdout == "", "code=%s stdout=%r" % (code, stdout))
+    check("SHIP allow leaves history untouched", read_state(state_path)["review"].get("history") == hist())
+    cleanup(tmp)
+
+    state = active_review(round_=4, max_rounds=3, verdict="FIX-FIRST", findings=["high: c.py:2 - x"])
+    state["review"]["history"] = hist()
+    tmp, _, code, stdout, decision = case("history + over cap", state, CAMEL_EVENT)
+    ok = (
+        code == 0
+        and decision is not None
+        and decision.get("decision") == "allow"
+        and "round 4 > max 3" in decision.get("reason", "")
+        and "operator" in decision.get("reason", "")
+    )
+    check("history present + round > max_rounds -> allow with cap message", ok, "stdout=%r" % stdout)
+    cleanup(tmp)
+
     print("idempotency")
     tmp, _, _, stdout1, _ = case("idempotent run 1", active_review(round_=2, verdict="FIX-FIRST"), CAMEL_EVENT)
     workdir = tmp

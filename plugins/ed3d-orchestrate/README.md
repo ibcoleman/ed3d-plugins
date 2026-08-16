@@ -99,7 +99,10 @@ The loop maintains `.ed3d/orchestrate-state.json` in the working repository. It 
     "open_critical_high": [
       "high: src/cli.py:42 - panics on empty input"
     ],
-    "consecutive_blocks": 1
+    "consecutive_blocks": 1,
+    "history": [
+      {"round": 1, "verdict": "FIX-FIRST", "critical_high": 2, "advisory": 4}
+    ]
   }
 }
 ```
@@ -107,6 +110,7 @@ The loop maintains `.ed3d/orchestrate-state.json` in the working repository. It 
 - `phase`: `research` | `plan` | `execute` | `review`
 - `review.verdict`: `PENDING` | `SHIP` | `FIX-FIRST`; final states are `SHIP` (including operator-accepted) or `review.active: false`
 - `review.round` goes to `max_rounds + 1` when the circuit-breaker trips — that is the signal the hook uses to allow the stop
+- `review.history`: append-only per-round verdict record; survives `/clear`+resume; ignored by the hook
 - `consecutive_blocks` counts blocks-since-last-progress: the hook increments it, the orchestrating skills reset it to 0 on every round/verdict transition
 
 ## Review Policy (and how it differs from ed3d-plan-and-execute)
