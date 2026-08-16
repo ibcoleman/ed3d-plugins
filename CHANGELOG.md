@@ -1,5 +1,13 @@
 # Changelog
 
+## [ed3d-orchestrate] [0.1.1]
+
+Pin subagent dispatch models explicitly after empirical testing on Copilot CLI 1.0.80.
+
+**Changed:**
+- All orchestrate skills now pin `model` and `reasoning_effort` on every subagent dispatch (reviewers `kimi-k3`/`high`, builders and scouts `gpt-5.6-luna`, fallback `gemini-3.5-flash`) — dispatch-time parameters override agent frontmatter and `/subagents` defaults, and unpinned dispatches produced unsupported model+effort combinations (e.g. `gpt-5.4` + `minimal`) that failed
+- README documents the three model-binding layers (dispatch params, settings.json, frontmatter) and their actual precedence; gemini fallback corrected to `gemini-3.5-flash`
+
 ## [ed3d-orchestrate] [0.1.0]
 
 Initial release of the Copilot CLI orchestration loop plugin.
