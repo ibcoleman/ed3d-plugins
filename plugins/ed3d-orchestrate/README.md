@@ -57,6 +57,8 @@ Those bindings live in the `*.agent.md` twins shipped alongside each plugin's Cl
 
 ## Model Overrides
 
+**For marketplace users: no additional configuration is required.** The skills pin `model` and `reasoning_effort` on every dispatch, so installing the plugin (plus `ed3d-research-agents` and `ed3d-plan-and-execute`) is enough — the bindings below matter only if you want to change them, or if your model catalog spells the ids differently (edit the pinned ids in the three skill templates).
+
 There are three binding layers; they do not behave symmetrically on current builds (verified on Copilot CLI 1.0.80):
 
 1. **Per-dispatch parameters (operative layer).** Copilot's subagent dispatch accepts `model` and `reasoning_effort` arguments on each dispatch, and these take precedence over everything else. The orchestrating model will pick values on its own if the skill doesn't pin them — including unsupported combinations (e.g. `gpt-5.4` + `reasoning_effort: minimal`) that fail the dispatch. This plugin's skills therefore pin them explicitly on every dispatch: reviewers `kimi-k3`/`high`, builders and scouts `gpt-5.6-luna`/`low`-`medium`, with `gemini-3.5-flash` as the documented availability fallback for luna-bound agents.
@@ -87,6 +89,7 @@ The loop maintains `.ed3d/orchestrate-state.json` in the working repository. It 
 ```json
 {
   "task": "add string-reversal CLI with tests",
+  "plan_path": "docs/implementation-plans/2026-08-16-string-reverse-cli/plan.md",
   "phase": "review",
   "review": {
     "active": true,
@@ -147,6 +150,10 @@ Then, from the repo you want to work on, in a session running on a high-reasonin
 ```
 
 Watch `.ed3d/orchestrate-state.json` as the loop runs — phase and review transitions are all visible there, and the plan lands in `docs/implementation-plans/`.
+
+### Context handoff and resume
+
+Builders and reviewers run in isolated subagent contexts, but the orchestrating session accumulates every printed subagent response. For large tasks, clear between phases: the loop records its full position in the state file (`phase`, `plan_path`, the review block), so `/clear` followed by `/ed3d-orchestrate:orchestrate resume` picks the loop back up with a fresh context — completed phases are not repeated.
 
 ## Known Limitations
 

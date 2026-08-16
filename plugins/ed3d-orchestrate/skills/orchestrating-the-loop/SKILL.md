@@ -17,6 +17,7 @@ At loop start, create `.ed3d/orchestrate-state.json` in the working directory of
 ```json
 {
   "task": "one-line description of the task",
+  "plan_path": null,
   "phase": "research",
   "review": {
     "active": false,
@@ -60,7 +61,7 @@ Required sections, in order:
 6. **Review Strategy** — how the work will be reviewed
 7. **Risks** — blockers, open decisions, unknowns with decision procedures
 
-Every AC must be verifiable by a named test or command. Every cited file path must exist — you verified them in Phase 1.
+Every AC must be verifiable by a named test or command. Every cited file path must exist — you verified them in Phase 1. When the plan is written, set `plan_path` in the state file to its absolute path.
 
 **Planning is read-only.** The plan document itself is the only thing you write in this phase. No code changes, no config changes, no scaffolding, no "quick wins". If the research surfaced a trivially-fixable problem, it goes in the plan, not in the working tree.
 
@@ -89,6 +90,14 @@ Fan out builders. One bounded task per dispatch — a builder gets a task it can
 - Before every dispatch, say in 2–3 sentences what you're asking the agent to do and which phase it covers.
 
 Update state: `phase: "execute"` before the first builder dispatch; `phase: "review"` when all builders have reported.
+
+## Context Handoff (optional, recommended for large tasks)
+
+Subagents run in isolated context windows, but **your** context accumulates every scout report, review, and builder response — the transparency rules require printing them all. For large tasks, hand off to a fresh context between phases instead of dragging research history through execution and review:
+
+1. Ensure the state file is current: `phase` up to date and `plan_path` set to the plan document's absolute path.
+2. Tell the operator: **"Context handoff point — to continue with a fresh context, run `/clear` and then `/ed3d-orchestrate:orchestrate resume`."**
+3. On resume, the loop reads the state file and the plan document and continues from the recorded phase. Completed phases are not repeated; nothing is lost to `/clear` — the plan, the commits, and the state file all live on disk.
 
 ## Phase 5: Tumble Dryer
 

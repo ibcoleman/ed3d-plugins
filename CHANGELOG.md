@@ -1,5 +1,14 @@
 # Changelog
 
+## [ed3d-orchestrate] [0.2.0]
+
+Context handoff and resume, plus marketplace-user documentation clarity.
+
+**New:**
+- `/orchestrate resume` continues an in-progress loop from `.ed3d/orchestrate-state.json` with a fresh context — completed phases are not repeated
+- State file records `plan_path`; the orchestrating skill offers a `/clear` + resume handoff between phases (subagents are context-isolated, but the orchestrating session otherwise accumulates every printed response)
+- README states explicitly that marketplace users need no additional model configuration — the skills pin dispatch parameters
+
 ## [ed3d-orchestrate] [0.1.1]
 
 Pin subagent dispatch models explicitly after empirical testing on Copilot CLI 1.0.80.
