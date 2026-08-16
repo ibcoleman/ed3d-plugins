@@ -57,14 +57,16 @@ Those bindings live in the `*.agent.md` twins shipped alongside each plugin's Cl
 
 ## Model Overrides
 
-Frontmatter `model` bindings are version-dependent in Copilot CLI. The authoritative override is `settings.json` (`~/.copilot/config.json`):
+Frontmatter `model` bindings are version-dependent in Copilot CLI — current builds ignore them for plugin agents. The authoritative override is `~/.copilot/settings.json` (user settings; `config.json` is managed automatically) under `subagents.agents`, keyed by bare agent name (unambiguous where the name is unique across installed plugins):
 
 ```json
 {
   "subagents": {
     "agents": {
-      "adversary": { "model": "kimi-k3" },
-      "task-implementor-fast": { "model": "gpt-5.6-luna" }
+      "adversary": { "model": "kimi-k3", "effortLevel": "high" },
+      "plan-reviewer": { "model": "kimi-k3", "effortLevel": "high" },
+      "task-implementor-fast": { "model": "gpt-5.6-luna" },
+      "task-bug-fixer": { "model": "gpt-5.6-luna" }
     }
   }
 }
