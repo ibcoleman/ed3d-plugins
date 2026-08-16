@@ -39,6 +39,7 @@ Rough Idea
 | **`ed3d-hook-claudemd-reminder`** | PostToolUse hook that reminds to update CLAUDE.md before committing |
 | **`ed3d-hook-security-hardening`** | PreToolUse and PostToolUse hooks that catch secrets leakage patterns |
 | **`ed3d-session-reflection`** | EXPERIMENTAL. Session awareness and conversation review tooling. Requires `ed3d-extending-claude` |
+| **`ed3d-orchestrate`** | EXPERIMENTAL. Polytoken-style orchestration loop for Copilot CLI: scout-sweep research, plan-review gate, builder fanout, adversarial review rounds with a stop-guardrail hook. Requires `ed3d-research-agents` + `ed3d-plan-and-execute` |
 
 ## Installation
 
@@ -72,9 +73,19 @@ ed3d-plugins/
 │   ├── ed3d-hook-skill-reinforcement/
 │   ├── ed3d-hook-claudemd-reminder/
 │   ├── ed3d-hook-security-hardening/
-│   └── ed3d-session-reflection/
+│   ├── ed3d-session-reflection/
+│   └── ed3d-orchestrate/
 └── README.md
 ```
+
+## Copilot CLI compatibility
+
+These plugins are authored for Claude Code, but load under GitHub Copilot CLI as well:
+
+- Every role agent ships a Copilot-native `<name>.agent.md` twin beside its Claude Code `<name>.md` definition — same body, strict-quoted frontmatter, and decorrelated model bindings (builders and reviewers deliberately run on different model families). The Claude Code files are untouched.
+- `ed3d-orchestrate` is a Copilot-first plugin implementing the full orchestration loop (scout sweep → plan → plan review → builders → adversarial review rounds) with an `agentStop` guardrail hook. It installs under Claude Code too, but its workflow targets Copilot sessions.
+
+Run `python3 scripts/validate_plugins.py` (requires PyYAML) to check twin frontmatter, model bindings, and marketplace integrity.
 
 ## Contributing
 Issues and pull requests gratefully solicited, except `ed3d-house-style` is _my_ house style, and provided for reference, so I might not take contributions there. (You can make your own house-style plugin though and use that instead!)
