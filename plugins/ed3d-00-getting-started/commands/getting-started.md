@@ -51,3 +51,4 @@ Rough Idea
 | **`ed3d-hook-claudemd-reminder`** | PostToolUse hook that reminds to update CLAUDE.md before committing |
 | **`ed3d-hook-security-hardening`** | PreToolUse and PostToolUse hooks that catch secrets leakage patterns |
 | **`ed3d-session-reflection`** | EXPERIMENTAL. Session awareness and conversation review tooling. Requires `ed3d-extending-claude` |
+| **`ed3d-orchestrate`** | EXPERIMENTAL. Polytoken-style orchestration loop for Copilot CLI: scout-sweep research, plan-review gate, builder fanout, adversarial review rounds with a stop-guardrail hook. Requires `ed3d-research-agents` + `ed3d-plan-and-execute` |

@@ -83,7 +83,7 @@ ed3d-plugins/
 These plugins are authored for Claude Code, but load under GitHub Copilot CLI as well:
 
 - Every role agent ships a Copilot-native `<name>.agent.md` twin beside its Claude Code `<name>.md` definition — same body, strict-quoted frontmatter, and decorrelated model bindings (builders and reviewers deliberately run on different model families). The Claude Code files are untouched.
-- `ed3d-orchestrate` is a Copilot-first plugin implementing the full orchestration loop (scout sweep → plan → plan review → builders → adversarial review rounds) with an `agentStop` guardrail hook. It installs under Claude Code too, but its workflow targets Copilot sessions.
+- `ed3d-orchestrate` is a Copilot-first plugin implementing the full orchestration loop (scout sweep → plan → plan review → builders → adversarial review rounds) with an `agentStop` guardrail hook. It installs under Claude Code too, but its workflow targets Copilot sessions. Model bindings are pinned by the plugin's skills on every dispatch — no extra configuration required.
 
 Run `python3 scripts/validate_plugins.py` (requires PyYAML) to check twin frontmatter, model bindings, and marketplace integrity.
 
