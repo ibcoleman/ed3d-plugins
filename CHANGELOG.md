@@ -1,5 +1,12 @@
 # Changelog
 
+## [ed3d-orchestrate] [0.3.2]
+
+Fixes a startup regression from 0.3.1's auto-resume state-file discovery.
+
+**Fixed:**
+- Bare `/orchestrate` could interpret the "walk up looking for the state file" instruction as a filesystem-wide search and prompt for access to `/` on first invocation (the second invocation reused the results in context, hiding the cause) — discovery is now bounded to direct file reads: the git root via `git rev-parse --show-toplevel`, else the current directory and its immediate parent, with recursive/glob/find-style searches explicitly prohibited
+
 ## [ed3d-orchestrate] [0.3.1]
 
 Hardens the review-loop protocol after live validation of 0.3.0 on a real Copilot run.

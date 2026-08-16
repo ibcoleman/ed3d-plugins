@@ -7,7 +7,7 @@ argument-hint: "[task-description]"
 
 ## Auto-resume mode
 
-Before asking for a task, walk up from the current directory looking for `.ed3d/orchestrate-state.json`.
+Before asking for a task, locate `.ed3d/orchestrate-state.json` with direct file reads only — never a search: inside a git repository, resolve the root with `git rev-parse --show-toplevel` and read `<root>/.ed3d/orchestrate-state.json`; outside one, check `.ed3d/orchestrate-state.json` in the current directory and, if absent, its immediate parent (only if still within the same project tree). Do not use recursive glob patterns or `find`-style searches, and never request access to directories outside the project — an unbounded walk-up prompts for `/` access (observed in 0.3.1's first live run).
 
 If `$1` is `resume`, or if `$1` is empty and the state file records an in-progress loop (`review.active` is true, or `review.verdict` is not `SHIP`):
 
@@ -22,7 +22,7 @@ If `$1` is `resume` and no state file exists, say so and ask for the task. If `$
 
 $1 contains the task description. If it is empty or vague after the auto-resume check above, ask the operator what they want accomplished — do not guess a task.
 
-1. **Verify the working directory and git baseline.** Confirm you are inside the repository where the work will happen. The loop requires a local git repository with at least one commit because adversarial review needs a valid `BASE_SHA..HEAD_SHA` range. If no git repo exists and the directory is empty or the task is to create a new project, initialize git and create an initial commit before research. If no git repo exists in a non-empty directory, ask before initializing. If a git repo exists but has no commits, create an initial commit before implementation. The loop maintains `.ed3d/orchestrate-state.json` in that repository's root, and the guardrail hook locates it by walking up from the working directory. If you are in the wrong place, `cd` to the right repository first.
+1. **Verify the working directory and git baseline.** Confirm you are inside the repository where the work will happen. The loop requires a local git repository with at least one commit because adversarial review needs a valid `BASE_SHA..HEAD_SHA` range. If no git repo exists and the directory is empty or the task is to create a new project, initialize git and create an initial commit before research. If no git repo exists in a non-empty directory, ask before initializing. If a git repo exists but has no commits, create an initial commit before implementation. The loop maintains `.ed3d/orchestrate-state.json` in that repository's root — read it there directly (the guardrail hook does its own in-process walk-up from the working directory; that is its mechanism, not an instruction to you). If you are in the wrong place, `cd` to the right repository first.
 
 2. **Engage the `orchestrating-the-loop` skill** (ed3d-orchestrate) and run it end-to-end for this task:
 

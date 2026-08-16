@@ -114,9 +114,11 @@ POLICY_TARGETS = {
         "Not if a state file exists. Resume the recorded loop first.",
     ],
     "plugins/ed3d-orchestrate/commands/orchestrate.md": [
-        # auto-resume mode (0.3.1)
+        # auto-resume mode (0.3.1) + bounded state-file discovery (0.3.2)
         "records an in-progress loop (`review.active` is true, or `review.verdict` is not `SHIP`)",
         "do not restart or repeat completed phases",
+        "resolve the root with `git rev-parse --show-toplevel`",
+        "never request access to directories outside the project",
         # git baseline requirement (0.3.1)
         "requires a local git repository with at least one commit",
         "record a valid `BASE_SHA` before builder execution",
