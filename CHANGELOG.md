@@ -1,5 +1,28 @@
 # Changelog
 
+## [ed3d-orchestrate] [0.3.3]
+
+Hardens the review loop after the strict-gate live run: nonce-tagged verdict scanning, a mechanical adversary write-guard, and multi-round loop fixes.
+
+**Fixed:**
+- Stale-verdict transcript scan false-fired on prose/hook-text literals and its prescriptive block message fabricated a terminal SHIP — verdicts are now matched by a per-loop nonce tag (`VERDICT: SHIP [nonce]`, case-normalized) and all guardrail messages are diagnostic and orchestrator-addressed with never-forward clauses
+- `head_sha` was never refreshed after fixer commits, so round 2+ re-reviewed the pre-fix diff — now refreshed (full 40-char SHA) before every re-review
+- Auto-resume now `cd`s to the repository root after locating the state file (`/clear` preserves shell CWD)
+- `verdict: "PENDING"` now explicitly means adversary-in-flight at every round (re-armed in the same state write as `round+1`)
+
+**New:**
+- `adversary-write-guard.py` preToolUse hook: mechanically blocks write-class tool calls (`edit`/`create`/`apply_patch`) from subagents while a review is active and PENDING — prose no-writes rules are no longer the only defense
+- `review.nonce` per-loop verdict tag in the state file
+- Test suites for both hooks, including the observed Copilot payload shapes verbatim
+
+**Changed:**
+- `hooks.json` registers the write-guard under preToolUse with a matcher covering observed and legacy write-tool names
+
+## [ed3d-house-style] [1.1.1]
+
+**Fixed:**
+- `howto-functional-vs-imperative` skill frontmatter `name` now matches its directory — resolves the ~1-in-10-runs "Skill not found" dangling ALWAYS-REQUIRED invocations in coding-effectively, task-implementor-fast, and house-style CLAUDE.md
+
 ## [ed3d-orchestrate] [0.3.2]
 
 Fixes a startup regression from 0.3.1's auto-resume state-file discovery.

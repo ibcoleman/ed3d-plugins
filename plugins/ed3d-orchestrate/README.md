@@ -104,7 +104,8 @@ The loop maintains `.ed3d/orchestrate-state.json` in the working repository. It 
     "consecutive_blocks": 1,
     "history": [
       {"round": 1, "verdict": "FIX-FIRST", "critical_high": 2, "advisory": 4}
-    ]
+    ],
+    "nonce": "a1b2c3d4"
   }
 }
 ```
@@ -114,6 +115,7 @@ The loop maintains `.ed3d/orchestrate-state.json` in the working repository. It 
 - `review.verdict`: `PENDING` | `SHIP` | `FIX-FIRST`; final states are `SHIP` (including operator-accepted) or `review.active: false`
 - `review.round` goes to `max_rounds + 1` when the circuit-breaker trips — that is the signal the hook uses to allow the stop
 - `review.history`: append-only per-round verdict record; survives `/clear`+resume; ignored by the hook
+- `review.nonce`: per-loop verdict tag (8 lowercase hex), generated when a review arms — including re-arms for a new loop — and survives `/clear`+resume; the guardrail matches rendered verdicts by it
 - `consecutive_blocks` counts blocks-since-last-progress: the hook increments it, the orchestrating skills reset it to 0 on every round/verdict transition; a terminal SHIP state with `consecutive_blocks != 0` is inconsistent and the hook will block the stop until it is repaired
 
 ## Review Policy (and how it differs from ed3d-plan-and-execute)
@@ -134,11 +136,17 @@ The loop maintains `.ed3d/orchestrate-state.json` in the working repository. It 
 - Registers under both documented spellings — Copilot-native `agentStop` and the VS Code-compatible `Stop` (which is also Claude Code's stop event). The decision output is stable across fires; if both events fire for one stop, the block counter increments once per event. (Note: `AgentStop` is **not** a documented event name in either runtime — the PascalCase equivalent of `agentStop` is `Stop`.)
 - Fail-open everywhere: no state file, malformed JSON, unreadable state, inactive review → exit 0 silently. Hook timeouts fail open per the Copilot hooks reference.
 - Blocking emits `{"decision": "block", "reason": "..."}` naming round N of M and the open findings; `round > max_rounds` allows the stop with a reason instructing the agent to surface the operator decision.
-- **Stale-verdict detection (0.3.1):** when the stop event carries a transcript path, the hook scans its tail; if the adversary already rendered `VERDICT: SHIP` + `has_critical_or_high: false` while the state file still says `PENDING`/active, the block reason instructs the orchestrator to commit the verdict (including `consecutive_blocks: 0`) instead of re-dispatching. Like every block it counts toward the 7-block safety cap, which takes precedence over it.
-- **Terminal-state enforcement (0.3.1):** a final `SHIP` state only allows a stop when it is consistent — `active: false`, `verdict: "SHIP"`, `consecutive_blocks: 0`. Otherwise the hook blocks with instructions to repair the state file before reporting — repeatedly until repaired, bounded by the 7-block safety cap.
+- **Stale-verdict detection (0.3.3, nonce-gated):** when the stop event carries a transcript path, the hook scans its tail for this loop's nonce-tagged SHIP marker (`VERDICT: SHIP [<nonce>]`, case-normalized). Prose can never contain the nonce-tagged form, so the 0.3.1-era false positives (literal `VERDICT: SHIP` strings from skill/hook text — one of which fabricated a terminal SHIP that overrode the operator) are structurally impossible. State files without a nonce (pre-0.3.3 in-flight loops) skip the scan entirely. Block reasons are diagnostic and addressed to the orchestrator only — never forwarded to subagents, never prescribing concrete state writes.
+- **Terminal-state enforcement (0.3.1):** a final `SHIP` state only allows a stop when it is consistent — `active: false`, `verdict: "SHIP"`, `consecutive_blocks: 0`. Otherwise the hook blocks, pointing at the adversarial-review skill's terminal-state verification — repeatedly until repaired, bounded by the 7-block safety cap.
 - Respects the CLI's 8-consecutive-block cap: after 7 blocks without recorded progress it allows with a warning, so a session can never hard-lock. The loop resets the counter on every round/verdict transition, so it only trips when stops are being blocked with no forward motion.
 
 Run the tests: `python3 plugins/ed3d-orchestrate/hooks/test-check-review-loop.py` (standalone, zero dependencies).
+
+## The Adversary Write-Guard
+
+`hooks/adversary-write-guard.py` runs on preToolUse (write-class tools) and mechanically enforces the adversary's no-writes rule: while `review.active` is true and `review.verdict` is `PENDING` — the adversary-in-flight window, at every round — write-class tool calls (`edit`, `create`, `apply_patch`, plus legacy Edit/Write variants) from subagent contexts (`call_`-prefixed session ids) are blocked with a diagnostic reason; the reviewer reports findings instead of fixing them. The orchestrator (UUID session id), builders, and the bug-fixer (which runs while verdict is `FIX-FIRST`) are never blocked. If a crashed loop leaves stale active+PENDING state on disk and legitimate subagent writes get blocked, delete or repair `.ed3d/orchestrate-state.json` — the block reason names its path. Known gap: writes via bash redirection are not intercepted; the prose rule remains the backstop there.
+
+Run its tests: `python3 plugins/ed3d-orchestrate/hooks/test-adversary-write-guard.py` (standalone, zero dependencies).
 
 ## Requirements
 
@@ -170,7 +178,7 @@ After `/clear`, run `/ed3d-orchestrate:orchestrate` with no arguments — when a
 ## Known Limitations
 
 - Facet discipline (e.g. read-only planning) is enforced by instruction, not by harness. The guardrail hook narrows this gap only for the review loop.
-- The hook's stale-verdict scan is a heuristic: it searches the transcript tail for the adversary's verdict strings. In a very long single session that starts a second orchestrate task after a SHIPed first one, a stale verdict match can block with a misplaced commit instruction; the 7-block cap bounds the loop, but obeying the instruction on a stale match would write a terminal SHIP into the new task's fresh review state, silently skipping its review. `/clear` between tasks avoids it entirely; the precise fix — a per-loop nonce echoed in the adversary's verdict block — is deferred (see ROADMAP).
+- The hook's stale-verdict scan is nonce-gated (0.3.3): it matches only this loop's `VERDICT: SHIP [<nonce>]` marker, so stale verdict strings from a prior loop in the same session can no longer false-match. Residual gaps: pre-0.3.3 in-flight state files carry no nonce and skip the scan; a crashed loop can leave stale active+PENDING state that write-blocks subagents until the state file is repaired; bash-redirection writes bypass the write-guard (prose rule remains).
 - Frontmatter `model` bindings may be ignored by older Copilot builds — verify with a spot-check of an adversary dispatch, and use the settings.json override if needed.
 - Parallel dispatch can trip provider rate limits; the skills fall back to serial/small-batch dispatch on rate-limit errors.
 - Per-dispatch model selection is the operative binding layer on current builds; if the skills' pinned model ids drift from your catalog (`kimi-k3`, `gpt-5.6-luna`, `gemini-3.5-flash`), correct the ids in the skill dispatch templates or via `/subagents`.

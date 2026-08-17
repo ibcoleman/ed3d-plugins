@@ -24,9 +24,12 @@ Drive adversarial review rounds over completed implementation work. This skill i
   "verdict": "PENDING",
   "open_critical_high": [],
   "consecutive_blocks": 0,
-  "history": []
+  "history": [],
+  "nonce": "a1b2c3d4"
 }
 ```
+
+Whenever a review arms — including re-arming an existing inactive review block for a new loop — generate a fresh nonce: 8 lowercase hex characters, written as `review.nonce`, overwriting any prior value. Include it in every adversary dispatch as `NONCE: <value>` — the guardrail hook matches rendered verdicts by this tag, which is what keeps the literal `VERDICT: SHIP` strings in skill and agent prose from being mistaken for a real verdict (that false match fabricated a terminal SHIP live on 2026-08-16). Never reuse a nonce across loops.
 
 - **Resume reconciliation.** If resuming into an active review (`review.active: true` on resume), reconcile first: any verdict already rendered in this session's transcript but absent from the state file must be written to the state file before any new dispatch. Do not dispatch a fresh adversary to "check" a verdict the transcript already contains. (This recovers same-session omissions only — after `/clear` the transcript is gone, the state file is the sole truth, and a stale `PENDING` on an already-completed loop can then only be caught by the operator or the round history.)
 
@@ -56,6 +59,7 @@ WHAT_WAS_IMPLEMENTED: [summary of the work]
 PLAN_OR_REQUIREMENTS: [absolute path to the plan document]
 BASE_SHA: [sha]
 HEAD_SHA: [sha]
+NONCE: [review.nonce - append it in square brackets to your VERDICT line]
 [Round 2+:]
 PRIOR_ISSUES:
 [verbatim list of open findings from the previous round]
@@ -67,7 +71,7 @@ PRIOR_ISSUES:
 
 From the response, extract:
 
-- `VERDICT: SHIP` or `VERDICT: FIX-FIRST`
+- `VERDICT: SHIP` or `VERDICT: FIX-FIRST` — the rendered line carries the loop nonce as a bracketed suffix (`VERDICT: SHIP [nonce]`); strip the tag when parsing
 - `has_critical_or_high: true|false`
 - The findings list
 
@@ -95,10 +99,11 @@ If the response contains no parseable verdict block, treat it as a protocol fail
 
 - If `round < max_rounds`:
   1. Dispatch `task-bug-fixer` (ed3d-plan-and-execute) with `model: gpt-5.6-luna`, `reasoning_effort: medium` (use `gemini-3.5-flash` if luna is rate-limited), passing the open critical/high findings, verbatim. **Print its full response.**
-  2. Set `round` to `round + 1` in the state file.
-  3. Re-dispatch the adversary with `PRIOR_ISSUES` set to the previous round's open findings.
-  4. **Silence is not fixed.** In the new review, any prior issue the adversary does not explicitly confirm fixed with evidence stays on the open list. Carry it forward.
-  5. Go to step 2.
+  2. Verify the fixes are committed and the working tree is clean, then refresh `head_sha` in the state file to the new full 40-character `git rev-parse HEAD`. Every round reviews `BASE_SHA..HEAD` including all fix commits — a stale `head_sha` makes the next round review the pre-fix diff and re-report everything.
+  3. Set `round` to `round + 1` and `verdict` to `"PENDING"` in the same state-file write — PENDING marks the adversary back in flight and re-arms the write-guard for the re-review.
+  4. Re-dispatch the adversary with the refreshed `HEAD_SHA` and `PRIOR_ISSUES` set to the previous round's open findings.
+  5. **Silence is not fixed.** In the new review, any prior issue the adversary does not explicitly confirm fixed with evidence stays on the open list. Carry it forward.
+  6. Go to step 2.
 
 - If `round >= max_rounds`: **circuit-break.**
   1. Set `round` to `max_rounds + 1` in the state file (this tells the guardrail hook the cap is reached — it will allow the session to stop and prompt you to surface the decision).

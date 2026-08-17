@@ -11,7 +11,7 @@ Before asking for a task, locate `.ed3d/orchestrate-state.json` with direct file
 
 If `$1` is `resume`, or if `$1` is empty and the state file records an in-progress loop (`review.active` is true, or `review.verdict` is not `SHIP`):
 
-1. Read the state file.
+1. Read the state file, then `cd` to the repository root you resolved it from — `/clear` preserves the shell's working directory (a live resume once ran from `docs/`), so make every subsequent git command and state-file write root-relative.
 2. Report the recorded `task`, `phase`, `plan_path`, and review state to the operator in one short paragraph.
 3. Read the plan document at `plan_path` (if set).
 4. Engage the `orchestrating-the-loop` skill to continue from the recorded phase — do not restart or repeat completed phases.

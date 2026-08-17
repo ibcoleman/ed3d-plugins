@@ -28,7 +28,8 @@ At loop start, create `.ed3d/orchestrate-state.json` in the working directory of
     "verdict": "PENDING",
     "open_critical_high": [],
     "consecutive_blocks": 0,
-    "history": []
+    "history": [],
+    "nonce": null
   }
 }
 ```
@@ -48,6 +49,8 @@ The review block's `history` field is the append-only round record:
 - The `adversarial-review` skill owns the review block during the dryer; when it activates the loop it sets `review.active: true`, `round: 1`. That skill also owns `history` appends — one entry per completed round (`critical_high` / `advisory` are the counts of findings at those severities in that round's report). Entries are append-only, never rewritten; an optional `note` string is the entry schema's only sanctioned extension point; create the array if it is absent (in-flight 0.2.x state files predate it). Rounds legitimately split across `/clear`+resume session boundaries, so per-session dispatch counts undercount the loop — `history` is the authoritative round count for the final report (the round count is the highest `round` value in `history`, not its length — a protocol-failure `PENDING` entry shares its round number).
 - Handle `consecutive_blocks` correctly in every rewrite: the guardrail hook (`check-review-loop.py`) increments it each time it blocks a stop; reset it to 0 whenever the loop makes progress (round advanced, verdict changed, or findings changed). Dropping the key weakens the hook's stop protection.
 - **A verdict that is not in the state file does not exist.** No stop, no operator report, no dispatch may occur between parsing a verdict and committing it to the state file — one turn, both actions. The guardrail reads the file, not your intentions.
+- **The loop nonce.** Whenever a review arms — including re-arming an existing inactive review block for a new loop — generate a fresh nonce: 8 lowercase hex characters, written as `review.nonce` (overwrite any prior value; never carry a nonce across loops). It persists for the whole loop, across every round and `/clear`+resume, and travels in every adversary dispatch as `NONCE: <value>`. The guardrail hook matches rendered verdicts by this tag, which is what keeps the literal `VERDICT: SHIP` strings in skill and agent prose from being mistaken for a real verdict.
+- **`verdict: "PENDING"` means an adversary dispatch is in flight — at every round.** Round 1 starts PENDING; after every FIX-FIRST round, once the fixer's commits are verified and `head_sha` is refreshed, re-arm in one state write: `round: round + 1` and `verdict: "PENDING"` together, before re-dispatching the adversary. While verdict is PENDING, the write-guard hook mechanically blocks write-class tool calls from subagents — that is the enforcement layer behind the adversary's no-writes rule, so treat any adversary claim of having fixed the state file or the working tree as suspect and verify against git.
 - On completion (SHIP or operator-accepted), set `review.active: false`, reset `consecutive_blocks: 0`, and leave the final `verdict` in place. The state file is the audit trail — the operator can reconstruct every transition from it after the fact.
 
 ## Phase 1: Research

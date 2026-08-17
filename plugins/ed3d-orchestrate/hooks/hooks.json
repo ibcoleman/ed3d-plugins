@@ -1,5 +1,17 @@
 {
     "hooks": {
+        "preToolUse": [
+            {
+                "matcher": "[Ee]dit|[Ww]rite|MultiEdit|NotebookEdit|[Cc]reate|apply_patch",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/adversary-write-guard.py\"",
+                        "timeout": 5
+                    }
+                ]
+            }
+        ],
         "agentStop": [
             {
                 "matcher": "",

@@ -31,7 +31,7 @@
         {
             "name": "ed3d-house-style",
             "description": "ed3d's house style for software development",
-            "version": "1.1.0",
+            "version": "1.1.1",
             "source": "./plugins/ed3d-house-style",
             "author": {
                 "name": "Ed",
@@ -165,7 +165,7 @@
         {
             "name": "ed3d-orchestrate",
             "description": "EXPERIMENTAL. Polytoken-style orchestration loop for Copilot CLI: scout-sweep research fanout, plan-review gate, builder fanout, and adversarial tumble-dryer review rounds with an agentStop guardrail hook.",
-            "version": "0.3.2",
+            "version": "0.3.3",
             "source": "./plugins/ed3d-orchestrate",
             "author": {
                 "name": "Ed",

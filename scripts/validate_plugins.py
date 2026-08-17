@@ -72,6 +72,9 @@ POLICY_TARGETS = {
         "VERDICT: SHIP", "VERDICT: FIX-FIRST", "has_critical_or_high",
         # no-writes rule (0.3.0): the adversary never maintains loop state
         "you never write `.ed3d/orchestrate-state.json`, never modify the working tree, never commit",
+        # 0.3.3: nonce-tagged output contract + hardened no-writes posture
+        "VERDICT: SHIP [nonce]",
+        "report, do not repair",
     ],
     "plugins/ed3d-orchestrate/skills/adversarial-review/SKILL.md": [
         "critical", "high", "medium", "low",
@@ -93,6 +96,11 @@ POLICY_TARGETS = {
         "both are valid commits in the current git repository",
         # terminal-state verification (0.3.1)
         "verify the terminal state",
+        # 0.3.3: nonce generated on arming (incl. re-arm for a new loop),
+        # head_sha refresh after fixer commits, PENDING re-arm before re-dispatch
+        "Whenever a review arms — including re-arming an existing inactive review block",
+        "refresh `head_sha` in the state file to the new full 40-character",
+        'and `verdict` to `"PENDING"` in the same state-file write',
     ],
     "plugins/ed3d-orchestrate/skills/orchestrating-the-loop/SKILL.md": [
         # verdict write-back atomicity (0.3.0)
@@ -112,6 +120,12 @@ POLICY_TARGETS = {
         "review.consecutive_blocks: 0",
         # auto-resume rationalization (0.3.1)
         "Not if a state file exists. Resume the recorded loop first.",
+        # 0.3.3: loop nonce schema + lifecycle, PENDING-means-in-flight invariant,
+        # write-guard as the mechanical enforcement layer
+        '"nonce": null',
+        "generate a fresh nonce",
+        "adversary dispatch is in flight",
+        "write-guard hook mechanically blocks write-class tool calls",
     ],
     "plugins/ed3d-orchestrate/commands/orchestrate.md": [
         # auto-resume mode (0.3.1) + bounded state-file discovery (0.3.2)
@@ -122,6 +136,8 @@ POLICY_TARGETS = {
         # git baseline requirement (0.3.1)
         "requires a local git repository with at least one commit",
         "record a valid `BASE_SHA` before builder execution",
+        # 0.3.3: resume cd-to-root after locating the state file
+        "`cd` to the repository root you resolved it from",
     ],
 }
 
@@ -326,6 +342,68 @@ def check_agent_markup_repo_wide():
                     fail("%s: contains <example>/<commentary> markup" % rel)
 
 
+def check_skill_names_repo_wide():
+    """Every skills/<dir>/SKILL.md frontmatter name equals <dir> (0.3.3).
+
+    Tolerant extraction by regex: the strict frontmatter grammar covers
+    the orchestrate set only, and most of the repo uses unquoted names,
+    which lint_frontmatter parses as None.
+    """
+    name_line = re.compile(r'^name:\s*"?([A-Za-z0-9_-]+)"?\s*$', re.MULTILINE)
+    for dirpath, dirnames, _filenames in os.walk(os.path.join(ROOT, "plugins")):
+        if os.path.basename(dirpath) != "skills":
+            continue
+        for dirname in sorted(dirnames):
+            skill_md = os.path.join(dirpath, dirname, "SKILL.md")
+            if not os.path.isfile(skill_md):
+                continue
+            rel = os.path.relpath(skill_md, ROOT)
+            fm_text, _ = split_frontmatter(read(rel), rel)
+            if fm_text is None:
+                fail("%s: no frontmatter" % rel)
+                continue
+            match = name_line.search(fm_text)
+            name = match.group(1) if match else None
+            if name != dirname:
+                fail("%s: skill frontmatter name %r != directory %r" % (rel, name, dirname))
+
+
+def check_write_guard_registration():
+    """hooks.json must keep the adversary write-guard armed (0.3.3).
+
+    Registered under preToolUse with a matcher covering the observed
+    Copilot write tools (edit/create/apply_patch) or a catch-all; the
+    hook's in-process WRITE_TOOLS set is the authority either way.
+    Matcher drift silently disarms the guard, so it is pinned here.
+    """
+    path = "plugins/ed3d-orchestrate/hooks/hooks.json"
+    try:
+        data = json.loads(read(path))
+    except (OSError, json.JSONDecodeError) as exc:
+        fail("hooks.json: %s" % exc)
+        return
+    registered = False
+    matcher_ok = False
+    for entry in data.get("hooks", {}).get("preToolUse", []):
+        for hook in entry.get("hooks", []):
+            if "adversary-write-guard.py" not in str(hook.get("command", "")):
+                continue
+            registered = True
+            matcher = str(entry.get("matcher", ""))
+            if matcher == "":
+                matcher_ok = True  # catch-all: the hook's WRITE_TOOLS is the authority
+            else:
+                try:
+                    pattern = re.compile(matcher)
+                    matcher_ok = all(pattern.search(tool) for tool in ("edit", "create", "apply_patch"))
+                except re.error:
+                    matcher_ok = False
+    if not registered:
+        fail("hooks.json: adversary-write-guard.py not registered under preToolUse")
+    elif not matcher_ok:
+        fail("hooks.json: write-guard preToolUse matcher does not cover the observed write tools (edit/create/apply_patch) or a catch-all")
+
+
 def check_marketplace():
     path = os.path.join(ROOT, ".claude-plugin", "marketplace.json")
     try:
@@ -389,6 +467,8 @@ def main():
         check_orchestrate_file(path)
     check_command()
     check_policy_strings()
+    check_skill_names_repo_wide()
+    check_write_guard_registration()
     check_agent_markup_repo_wide()
     check_marketplace()
     scan_preexisting_warnings()
