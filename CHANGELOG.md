@@ -1,5 +1,34 @@
 # Changelog
 
+## [ed3d-basic-agents] [1.2.1]
+
+Updates Copilot-native agent twins to inherit the account's Auto/default model and effort selection.
+
+**Changed:**
+- Removed explicit model and effort pins from the Copilot agent twins
+
+## [ed3d-plan-and-execute] [1.12.1]
+
+Updates Copilot-native agent twins to inherit the account's Auto/default model and effort selection.
+
+**Changed:**
+- Removed explicit model and effort pins from the Copilot agent twins
+
+## [ed3d-research-agents] [1.2.1]
+
+Updates Copilot-native agent twins to inherit the account's Auto/default model and effort selection.
+
+**Changed:**
+- Removed explicit model and effort pins from the Copilot agent twins
+
+## [ed3d-orchestrate] [0.3.4]
+
+Makes Copilot-native agents inherit the account's Auto/default model selection instead of carrying stale model pins.
+
+**Changed:**
+- Removed `model` frontmatter from all Copilot agent twins and omitted model and reasoning-effort overrides from orchestrate dispatch instructions
+- Updated validation and README guidance so account/CLI defaults decide both model and effort
+
 ## [ed3d-orchestrate] [0.3.3]
 
 Hardens the review loop after the strict-gate live run: nonce-tagged verdict scanning, a mechanical adversary write-guard, and multi-round loop fixes.

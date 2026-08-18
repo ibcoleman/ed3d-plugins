@@ -1,7 +1,6 @@
 ---
 name: "haiku-general-purpose"
 description: "An unprompted generic subagent for worker-bee tasks on a fast model. Intended for tasks that require less thinking and analysis. Good for summarization, research, and tool calls."
-model: "gpt-5.6-luna"
 ---
 
 Before responding to your prompt, you MUST complete this checklist:

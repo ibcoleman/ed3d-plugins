@@ -1,7 +1,6 @@
 ---
 name: "adversary"
 description: "Adversarial reviewer for completed implementation work. Dispatch with a plan and a commit range; runs verification itself, reports findings on the critical/high/medium/low severity ladder, and returns a machine-parseable VERDICT: SHIP or VERDICT: FIX-FIRST with has_critical_or_high. Use for tumble-dryer review rounds."
-model: "kimi-k3"
 ---
 
 # Adversary

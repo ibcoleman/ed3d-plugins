@@ -36,19 +36,20 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SANCTIONED_LINE = "Do not dispatch or invoke subagents; return directly to your caller."
 
-# 14 expected twins: path -> expected model (None = key must be absent)
+# 14 expected twins: path -> expected model (None = model key must be absent).
+# Copilot-native twins inherit the account's Auto/default model selection.
 EXPECTED_TWINS = {
-    "plugins/ed3d-plan-and-execute/agents/task-implementor-fast.agent.md": "gpt-5.6-luna",
-    "plugins/ed3d-plan-and-execute/agents/code-reviewer.agent.md": "kimi-k3",
-    "plugins/ed3d-plan-and-execute/agents/task-bug-fixer.agent.md": "gpt-5.6-luna",
-    "plugins/ed3d-plan-and-execute/agents/test-analyst.agent.md": "kimi-k3",
-    "plugins/ed3d-research-agents/agents/internet-researcher.agent.md": "gpt-5.6-luna",
-    "plugins/ed3d-research-agents/agents/codebase-investigator.agent.md": "gpt-5.6-luna",
-    "plugins/ed3d-research-agents/agents/remote-code-researcher.agent.md": "gpt-5.6-luna",
-    "plugins/ed3d-research-agents/agents/combined-researcher.agent.md": "gpt-5.6-luna",
-    "plugins/ed3d-basic-agents/agents/haiku-general-purpose.agent.md": "gpt-5.6-luna",
-    "plugins/ed3d-basic-agents/agents/sonnet-general-purpose.agent.md": "gpt-5.6-luna",
-    "plugins/ed3d-basic-agents/agents/opus-general-purpose.agent.md": "kimi-k3",
+    "plugins/ed3d-plan-and-execute/agents/task-implementor-fast.agent.md": None,
+    "plugins/ed3d-plan-and-execute/agents/code-reviewer.agent.md": None,
+    "plugins/ed3d-plan-and-execute/agents/task-bug-fixer.agent.md": None,
+    "plugins/ed3d-plan-and-execute/agents/test-analyst.agent.md": None,
+    "plugins/ed3d-research-agents/agents/internet-researcher.agent.md": None,
+    "plugins/ed3d-research-agents/agents/codebase-investigator.agent.md": None,
+    "plugins/ed3d-research-agents/agents/remote-code-researcher.agent.md": None,
+    "plugins/ed3d-research-agents/agents/combined-researcher.agent.md": None,
+    "plugins/ed3d-basic-agents/agents/haiku-general-purpose.agent.md": None,
+    "plugins/ed3d-basic-agents/agents/sonnet-general-purpose.agent.md": None,
+    "plugins/ed3d-basic-agents/agents/opus-general-purpose.agent.md": None,
     "plugins/ed3d-session-reflection/agents/conversation-reviewer.agent.md": None,
     "plugins/ed3d-playwright/agents/playwright-explorer.agent.md": None,
     "plugins/ed3d-extending-claude/agents/project-claude-librarian.agent.md": None,
@@ -65,6 +66,34 @@ ORCHESTRATE_STRICT_MD = [
     "plugins/ed3d-orchestrate/skills/scout-sweep/SKILL.md",
     "plugins/ed3d-orchestrate/commands/orchestrate.md",
 ]
+
+POLICY_FORBIDDEN = {
+    # Copilot dispatch prompts must inherit model and effort selection from account Auto/default.
+    "plugins/ed3d-orchestrate/agents/adversary.agent.md": [
+        "model:", "reasoning_effort:", "effort:", "effortLevel:",
+        "kimi-k3", "gpt-5.6-luna", "gemini-3.5-flash", "Always pin", "pinned model",
+    ],
+    "plugins/ed3d-orchestrate/agents/plan-reviewer.agent.md": [
+        "model:", "reasoning_effort:", "effort:", "effortLevel:",
+        "kimi-k3", "gpt-5.6-luna", "gemini-3.5-flash", "Always pin", "pinned model",
+    ],
+    "plugins/ed3d-orchestrate/commands/orchestrate.md": [
+        "model:", "reasoning_effort:", "effort:", "effortLevel:",
+        "kimi-k3", "gpt-5.6-luna", "gemini-3.5-flash", "Always pin", "pinned model",
+    ],
+    "plugins/ed3d-orchestrate/skills/adversarial-review/SKILL.md": [
+        "model:", "reasoning_effort:", "effort:", "effortLevel:",
+        "kimi-k3", "gpt-5.6-luna", "gemini-3.5-flash", "Always pin", "pinned model",
+    ],
+    "plugins/ed3d-orchestrate/skills/orchestrating-the-loop/SKILL.md": [
+        "model:", "reasoning_effort:", "effort:", "effortLevel:",
+        "kimi-k3", "gpt-5.6-luna", "gemini-3.5-flash", "Always pin", "pinned model",
+    ],
+    "plugins/ed3d-orchestrate/skills/scout-sweep/SKILL.md": [
+        "model:", "reasoning_effort:", "effort:", "effortLevel:",
+        "kimi-k3", "gpt-5.6-luna", "gemini-3.5-flash", "Always pin", "pinned model",
+    ],
+}
 
 POLICY_TARGETS = {
     "plugins/ed3d-orchestrate/agents/adversary.agent.md": [
@@ -101,6 +130,9 @@ POLICY_TARGETS = {
         "Whenever a review arms — including re-arming an existing inactive review block",
         "refresh `head_sha` in the state file to the new full 40-character",
         'and `verdict` to `"PENDING"` in the same state-file write',
+        # Auto/default model inheritance: model and effort selection are intentionally omitted.
+        "Use the account's Auto/default model selection",
+        "Do not select a model or set an effort override",
     ],
     "plugins/ed3d-orchestrate/skills/orchestrating-the-loop/SKILL.md": [
         # verdict write-back atomicity (0.3.0)
@@ -126,6 +158,13 @@ POLICY_TARGETS = {
         "generate a fresh nonce",
         "adversary dispatch is in flight",
         "write-guard hook mechanically blocks write-class tool calls",
+        # Auto/default model inheritance: model selection is intentionally omitted.
+        "leaving model selection to the account's Auto/default",
+        "Do not select or pin a model in dispatch instructions",
+    ],
+    "plugins/ed3d-orchestrate/skills/scout-sweep/SKILL.md": [
+        "Use the account's Auto/default model selection",
+        "Send no model or effort override",
     ],
     "plugins/ed3d-orchestrate/commands/orchestrate.md": [
         # auto-resume mode (0.3.1) + bounded state-file discovery (0.3.2)
@@ -330,6 +369,14 @@ def check_policy_strings():
         for needle in needles:
             if needle not in text:
                 fail("%s: missing policy string %r" % (path, needle))
+    for path, needles in POLICY_FORBIDDEN.items():
+        if not os.path.isfile(os.path.join(ROOT, path)):
+            fail("missing forbidden-policy target: %s" % path)
+            continue
+        text = read(path)
+        for needle in needles:
+            if needle in text:
+                fail("%s: forbidden policy string present %r" % (path, needle))
 
 
 def check_agent_markup_repo_wide():

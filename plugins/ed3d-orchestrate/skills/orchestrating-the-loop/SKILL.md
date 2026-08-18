@@ -87,7 +87,7 @@ Every AC must be verifiable by a named test or command. Every cited file path mu
 
 The plan does not proceed to execution until it survives review.
 
-1. Dispatch `plan-reviewer` (ed3d-orchestrate) with `model: kimi-k3`, `reasoning_effort: high`, passing `PLAN_PATH` (absolute) and `REPO_ROOT` (absolute). **Print its full response.**
+1. Dispatch `plan-reviewer` (ed3d-orchestrate) without model or effort overrides, leaving model selection to the account's Auto/default; account/CLI defaults decide both. Do not select or pin a model in dispatch instructions. Pass `PLAN_PATH` (absolute) and `REPO_ROOT` (absolute). **Print its full response.**
 2. Parse the verdict (`VERDICT: SHIP` / `VERDICT: FIX-FIRST`, `has_critical_or_high`).
 3. On critical/high findings: fix the plan document, then re-dispatch `plan-reviewer` **once**.
 4. If critical/high findings persist after the single re-review: **stop and present them to the operator.** The operator decides whether to revise again, proceed with acknowledged risks, or abandon. Do not proceed to execution on your own authority with open critical/high plan findings.
@@ -115,8 +115,8 @@ If you are resuming into this phase (`phase: "execute"` in the state file), read
 
 Fan out builders. One bounded task per dispatch — a builder gets a task it can complete fully with tests and a commit.
 
-- Dispatch `task-implementor-fast` (ed3d-plan-and-execute) for implementation tasks, pinning the dispatch parameters: `model: gpt-5.6-luna`, `reasoning_effort: medium` (fall back to `gemini-3.5-flash` on luna rate limits).
-- **Copilot's dispatch tool accepts per-dispatch `model` and `reasoning_effort`, and these override agent frontmatter and `/subagents` defaults.** Without explicit pins, the orchestrating model picks models on its own — including unsupported combinations (e.g. `gpt-5.4` with `reasoning_effort: minimal`), which fail the dispatch. Pin them on every dispatch: reviewers get `kimi-k3`/`high`, builders and scouts get `gpt-5.6-luna`/`low`-`medium`.
+- Dispatch `task-implementor-fast` (ed3d-plan-and-execute) for implementation tasks without model or effort overrides; leave model selection unset so the account's Auto/default applies, and account/CLI defaults decide both.
+- Do not select or pin a model in dispatch instructions or set an effort.
 - **Independent tasks may run in parallel; dependent tasks must be sequenced.** If a dispatch fails with a provider rate-limit error, serialize: at most 2 in flight for the rest of the phase.
 - Each dispatch prompt includes: the plan path (absolute), the task number, the working directory, and "Do not dispatch or invoke any subagents."
 

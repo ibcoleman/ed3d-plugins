@@ -21,7 +21,7 @@
         {
             "name": "ed3d-plan-and-execute",
             "description": "Planning and execution workflows for Claude Code. Based on obra/superpowers.",
-            "version": "1.12.0",
+            "version": "1.12.1",
             "source": "./plugins/ed3d-plan-and-execute",
             "author": {
                 "name": "Ed",
@@ -41,7 +41,7 @@
         {
             "name": "ed3d-basic-agents",
             "description": "Core agents for general-purpose tasks. Other plugins expect this to exist.",
-            "version": "1.2.0",
+            "version": "1.2.1",
             "source": "./plugins/ed3d-basic-agents",
             "author": {
                 "name": "Ed",
@@ -52,7 +52,7 @@
         {
             "name": "ed3d-research-agents",
             "description": "Agents used for research across multiple data sources.",
-            "version": "1.2.0",
+            "version": "1.2.1",
             "source": "./plugins/ed3d-research-agents",
             "author": {
                 "name": "Ed",
@@ -165,7 +165,7 @@
         {
             "name": "ed3d-orchestrate",
             "description": "EXPERIMENTAL. Polytoken-style orchestration loop for Copilot CLI: scout-sweep research fanout, plan-review gate, builder fanout, and adversarial tumble-dryer review rounds with an agentStop guardrail hook.",
-            "version": "0.3.3",
+            "version": "0.3.4",
             "source": "./plugins/ed3d-orchestrate",
             "author": {
                 "name": "Ed",

@@ -1,7 +1,6 @@
 ---
 name: "opus-general-purpose"
 description: "An unprompted generic subagent on a high-reasoning model. Intended for tasks that require deep reasoning, complex analysis, or nuanced judgment."
-model: "kimi-k3"
 ---
 
 Before responding to your prompt, you MUST complete this checklist:

@@ -30,57 +30,25 @@ This plugin is written for Copilot CLI's native delegation. Its skills use Copil
  6. REPORT ────── per-phase summary, review history, final verdict
 ```
 
-## Agents and Model Bindings
+## Agents and model selection
 
-The model map decorrelates builders from reviewers: worker-bee agents run on one family, adversarial/review agents on another, so the reviewer never shares a model family's blind spots with the builder it reviews.
+The Copilot-native `*.agent.md` twins intentionally omit a `model` frontmatter key. Each agent inherits the account's Copilot Auto/default model, so the same plugin works across accounts and model catalogs without stale model IDs or forced tier changes. The twins preserve role descriptions and bodies from their Claude Code originals; they do not prescribe a runtime model.
 
-| Agent | Role | Model |
-|-------|------|-------|
-| `adversary` | Adversarial implementation review, tumble-dryer rounds | `kimi-k3` |
-| `plan-reviewer` | Plan-document review gate | `kimi-k3` |
+| Agent group | Role | Model selection |
+|-------------|------|-----------------|
+| `adversary`, `plan-reviewer` | Review and plan gates | Account Auto/default |
+| `task-implementor-fast`, `task-bug-fixer` | Builders and review fixes | Account Auto/default |
+| Research agents and `haiku-general-purpose` | Scouts | Account Auto/default |
 
-Dispatched from other plugins (this plugin requires them):
+Dispatched agents come from `ed3d-plan-and-execute`, `ed3d-research-agents`, and `ed3d-basic-agents`; install those plugins when using their roles.
 
-| Agent | Plugin | Role | Model |
-|-------|--------|------|-------|
-| `task-implementor-fast` | ed3d-plan-and-execute | Builder | `gpt-5.6-luna` |
-| `task-bug-fixer` | ed3d-plan-and-execute | Review-fix responder | `gpt-5.6-luna` |
-| `codebase-investigator` | ed3d-research-agents | Scout: codebase state | `gpt-5.6-luna` |
-| `internet-researcher` | ed3d-research-agents | Scout: external knowledge | `gpt-5.6-luna` |
-| `combined-researcher` | ed3d-research-agents | Scout: both | `gpt-5.6-luna` |
-| `remote-code-researcher` | ed3d-research-agents | Scout: external source code | `gpt-5.6-luna` |
-| `haiku-general-purpose` | ed3d-basic-agents | Scout: light legwork | `gpt-5.6-luna` |
+The orchestrator is the main session — there is deliberately no orchestrator agent file. Start it with whatever model and account defaults are appropriate for the task.
 
-Those bindings live in the `*.agent.md` twins shipped alongside each plugin's Claude Code agents.
+## Model and effort defaults
 
-**Session model:** start orchestration sessions on the same high-reasoning tier as the reviewers (`kimi-k3`). The orchestrator is the main session — there is deliberately no orchestrator agent file.
+**For marketplace users: no model configuration is required.** Dispatch instructions send no model or effort override; the account's Auto/default and CLI defaults decide both.
 
-## Model Overrides
-
-**For marketplace users: no additional configuration is required.** The skills pin `model` and `reasoning_effort` on every dispatch, so installing the plugin (plus `ed3d-research-agents` and `ed3d-plan-and-execute`) is enough — the bindings below matter only if you want to change them, or if your model catalog spells the ids differently (edit the pinned ids in the three skill templates).
-
-There are three binding layers; they do not behave symmetrically on current builds (verified on Copilot CLI 1.0.80):
-
-1. **Per-dispatch parameters (operative layer).** Copilot's subagent dispatch accepts `model` and `reasoning_effort` arguments on each dispatch, and these take precedence over everything else. The orchestrating model will pick values on its own if the skill doesn't pin them — including unsupported combinations (e.g. `gpt-5.4` + `reasoning_effort: minimal`) that fail the dispatch. This plugin's skills therefore pin them explicitly on every dispatch: reviewers `kimi-k3`/`high`, builders and scouts `gpt-5.6-luna`/`low`-`medium`, with `gemini-3.5-flash` as the documented availability fallback for luna-bound agents.
-2. **`~/.copilot/settings.json` → `subagents.agents.<name>`** (per the Copilot config-dir reference: `model`/`effortLevel`/`contextTier`). Documented, but hand-edits have produced fallback-to-default behavior on 1.0.80 — prefer the `/subagents` picker, which persists this config in the schema the CLI actually reads.
-3. **Agent frontmatter `model`** — version-dependent and, on 1.0.80 with pinned dispatch params, overridden. The twins carry it as declarative documentation of the intended binding.
-
-```json
-{
-  "subagents": {
-    "agents": {
-      "adversary": { "model": "kimi-k3", "effortLevel": "high" },
-      "plan-reviewer": { "model": "kimi-k3", "effortLevel": "high" },
-      "task-implementor-fast": { "model": "gpt-5.6-luna" },
-      "task-bug-fixer": { "model": "gpt-5.6-luna" }
-    }
-  }
-}
-```
-
-**Availability fallback:** when the luna tier is rate-limited (observed in practice), rebind the luna-bound agents to `gemini-3.5-flash` — either via the dispatch parameters (skills) or the settings block above. Decorrelation is preserved — reviewers stay on `kimi-k3`.
-
-`gpt-5.3-codex` is a reasonable alternative binding for the builder agents if luna is unavailable and flash is too weak for implementation work.
+You may still configure Copilot's own account or `~/.copilot/settings.json` defaults if you want a preferred model or effort. Such configuration is optional and is applied by Copilot rather than by this plugin. Do not edit the agent twins or dispatch instructions to add model or effort overrides: omission is the compatibility policy.
 
 ## State File
 
@@ -179,6 +147,5 @@ After `/clear`, run `/ed3d-orchestrate:orchestrate` with no arguments — when a
 
 - Facet discipline (e.g. read-only planning) is enforced by instruction, not by harness. The guardrail hook narrows this gap only for the review loop.
 - The hook's stale-verdict scan is nonce-gated (0.3.3): it matches only this loop's `VERDICT: SHIP [<nonce>]` marker, so stale verdict strings from a prior loop in the same session can no longer false-match. Residual gaps: pre-0.3.3 in-flight state files carry no nonce and skip the scan; a crashed loop can leave stale active+PENDING state that write-blocks subagents until the state file is repaired; bash-redirection writes bypass the write-guard (prose rule remains).
-- Frontmatter `model` bindings may be ignored by older Copilot builds — verify with a spot-check of an adversary dispatch, and use the settings.json override if needed.
+- Model selection is intentionally inherited from Copilot Auto/default; if you need a preferred model, configure it in Copilot rather than editing the plugin's agent twins or skill dispatch templates.
 - Parallel dispatch can trip provider rate limits; the skills fall back to serial/small-batch dispatch on rate-limit errors.
-- Per-dispatch model selection is the operative binding layer on current builds; if the skills' pinned model ids drift from your catalog (`kimi-k3`, `gpt-5.6-luna`, `gemini-3.5-flash`), correct the ids in the skill dispatch templates or via `/subagents`.

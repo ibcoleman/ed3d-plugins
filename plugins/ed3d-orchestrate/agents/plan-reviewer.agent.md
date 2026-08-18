@@ -1,7 +1,6 @@
 ---
 name: "plan-reviewer"
 description: "Reviews an implementation plan document before execution. Checks that required sections are present, acceptance criteria are independently verifiable and mapped to named tests, cited file paths actually exist, and unknowns are resolved or flagged. Reports on the critical/high/medium/low ladder and returns VERDICT: SHIP or VERDICT: FIX-FIRST."
-model: "kimi-k3"
 ---
 
 # Plan Reviewer

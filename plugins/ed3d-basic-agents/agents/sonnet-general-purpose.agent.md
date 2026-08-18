@@ -1,7 +1,6 @@
 ---
 name: "sonnet-general-purpose"
 description: "An unprompted generic subagent for worker-bee tasks on a mid-tier model. Intended for tasks that require attention to detail, thinking, and analysis."
-model: "gpt-5.6-luna"
 ---
 
 Before responding to your prompt, you MUST complete this checklist:
