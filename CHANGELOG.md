@@ -1,5 +1,13 @@
 # Changelog
 
+## [ed3d-orchestrate] [0.3.5]
+
+Fixes Copilot-native delegation for orchestrated agents.
+
+**Fixed:**
+- Explicitly directs Copilot to invoke `*.agent.md` resources through native agent/subagent delegation rather than the Skill loader, resolving `Skill not found` errors for delegated agents.
+
+
 ## [ed3d-basic-agents] [1.2.1]
 
 Updates Copilot-native agent twins to inherit the account's Auto/default model and effort selection.

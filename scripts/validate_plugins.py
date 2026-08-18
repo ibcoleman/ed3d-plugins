@@ -95,6 +95,11 @@ POLICY_FORBIDDEN = {
     ],
 }
 
+AGENT_DISPATCH_POLICY = (
+    "Invoke the named resource through Copilot's native agent/subagent delegation mechanism; "
+    "do not call the Skill loader for agent names."
+)
+
 POLICY_TARGETS = {
     "plugins/ed3d-orchestrate/agents/adversary.agent.md": [
         "critical", "high", "medium", "low",
@@ -106,6 +111,7 @@ POLICY_TARGETS = {
         "report, do not repair",
     ],
     "plugins/ed3d-orchestrate/skills/adversarial-review/SKILL.md": [
+        AGENT_DISPATCH_POLICY,
         "critical", "high", "medium", "low",
         "VERDICT: SHIP", "VERDICT: FIX-FIRST", "max_rounds",
         # verdict write-back atomicity (0.3.0): commit in the same turn as parsing
@@ -135,6 +141,7 @@ POLICY_TARGETS = {
         "Do not select a model or set an effort override",
     ],
     "plugins/ed3d-orchestrate/skills/orchestrating-the-loop/SKILL.md": [
+        AGENT_DISPATCH_POLICY,
         # verdict write-back atomicity (0.3.0)
         "A verdict that is not in the state file does not exist",
         "The guardrail reads the file, not your intentions",
@@ -163,6 +170,7 @@ POLICY_TARGETS = {
         "Do not select or pin a model in dispatch instructions",
     ],
     "plugins/ed3d-orchestrate/skills/scout-sweep/SKILL.md": [
+        AGENT_DISPATCH_POLICY,
         "Use the account's Auto/default model selection",
         "Send no model or effort override",
     ],

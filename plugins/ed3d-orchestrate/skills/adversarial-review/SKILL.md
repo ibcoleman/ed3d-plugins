@@ -52,7 +52,7 @@ Whenever a review arms — including re-arming an existing inactive review block
 
 Use the account's Auto/default model selection for this dispatch. Do not select a model or set an effort override; the account's CLI defaults decide both.
 
-Dispatch `adversary` (ed3d-orchestrate) without model or effort parameters, and:
+Invoke the named resource through Copilot's native agent/subagent delegation mechanism; do not call the Skill loader for agent names. Dispatch `adversary` (ed3d-orchestrate) without model or effort parameters, and:
 
 ```
 WHAT_WAS_IMPLEMENTED: [summary of the work]
@@ -98,7 +98,7 @@ If the response contains no parseable verdict block, treat it as a protocol fail
 **`VERDICT: FIX-FIRST` with critical/high open:**
 
 - If `round < max_rounds`:
-  1. Dispatch `task-bug-fixer` (ed3d-plan-and-execute) without model or effort overrides, leaving model selection to the account's Auto/default; account/CLI defaults decide both. Pass the open critical/high findings verbatim. **Print its full response.**
+  1. Invoke the named resource through Copilot's native agent/subagent delegation mechanism; do not call the Skill loader for agent names. Dispatch `task-bug-fixer` (ed3d-plan-and-execute) without model or effort overrides, leaving model selection to the account's Auto/default; account/CLI defaults decide both. Pass the open critical/high findings verbatim. **Print its full response.**
   2. Verify the fixes are committed and the working tree is clean, then refresh `head_sha` in the state file to the new full 40-character `git rev-parse HEAD`. Every round reviews `BASE_SHA..HEAD` including all fix commits — a stale `head_sha` makes the next round review the pre-fix diff and re-report everything.
   3. Set `round` to `round + 1` and `verdict` to `"PENDING"` in the same state-file write — PENDING marks the adversary back in flight and re-arms the write-guard for the re-review.
   4. Re-dispatch the adversary with the refreshed `HEAD_SHA` and `PRIOR_ISSUES` set to the previous round's open findings.

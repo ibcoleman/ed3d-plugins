@@ -30,7 +30,7 @@ Effort levels:
 
 Use the account's Auto/default model selection for scouts. Send no model or effort override; the account's CLI defaults decide both.
 
-Match each focus area to the best researcher agent. Reference agents by both bare and qualified name in your dispatch so they resolve under any install:
+Match each focus area to the best researcher agent. Invoke the named resource through Copilot's native agent/subagent delegation mechanism; do not call the Skill loader for agent names. Reference agents by both bare and qualified name in your dispatch so they resolve under any install:
 
 - `codebase-investigator` (ed3d-research-agents) — codebase state, existing patterns
 - `internet-researcher` (ed3d-research-agents) — current external knowledge, API docs

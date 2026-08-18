@@ -4,6 +4,8 @@
 
 This plugin is written for Copilot CLI's native delegation. Its skills use Copilot-native dispatch prose (not Claude Code's XML `Task` blocks), and its agents ship as `*.agent.md`. It installs cleanly under Claude Code too — the guardrail hook fails open when no orchestration state file exists — but the workflow itself targets Copilot sessions.
 
+**Agents and skills use different loaders.** Names that identify `*.agent.md` resources (including scouts, reviewers, builders, adversaries, and fixers) must be invoked through Copilot's native agent/subagent delegation mechanism; do not call the Skill loader for agent names. Use the Skill loader only for `SKILL.md` resources.
+
 ## The Loop
 
 ```

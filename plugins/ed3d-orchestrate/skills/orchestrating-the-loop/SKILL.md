@@ -87,7 +87,7 @@ Every AC must be verifiable by a named test or command. Every cited file path mu
 
 The plan does not proceed to execution until it survives review.
 
-1. Dispatch `plan-reviewer` (ed3d-orchestrate) without model or effort overrides, leaving model selection to the account's Auto/default; account/CLI defaults decide both. Do not select or pin a model in dispatch instructions. Pass `PLAN_PATH` (absolute) and `REPO_ROOT` (absolute). **Print its full response.**
+1. Invoke the named resource through Copilot's native agent/subagent delegation mechanism; do not call the Skill loader for agent names. Dispatch `plan-reviewer` (ed3d-orchestrate) without model or effort overrides, leaving model selection to the account's Auto/default; account/CLI defaults decide both. Do not select or pin a model in dispatch instructions. Pass `PLAN_PATH` (absolute) and `REPO_ROOT` (absolute). **Print its full response.**
 2. Parse the verdict (`VERDICT: SHIP` / `VERDICT: FIX-FIRST`, `has_critical_or_high`).
 3. On critical/high findings: fix the plan document, then re-dispatch `plan-reviewer` **once**.
 4. If critical/high findings persist after the single re-review: **stop and present them to the operator.** The operator decides whether to revise again, proceed with acknowledged risks, or abandon. Do not proceed to execution on your own authority with open critical/high plan findings.
@@ -115,7 +115,7 @@ If you are resuming into this phase (`phase: "execute"` in the state file), read
 
 Fan out builders. One bounded task per dispatch — a builder gets a task it can complete fully with tests and a commit.
 
-- Dispatch `task-implementor-fast` (ed3d-plan-and-execute) for implementation tasks without model or effort overrides; leave model selection unset so the account's Auto/default applies, and account/CLI defaults decide both.
+- Invoke the named resource through Copilot's native agent/subagent delegation mechanism; do not call the Skill loader for agent names. Dispatch `task-implementor-fast` (ed3d-plan-and-execute) for implementation tasks without model or effort overrides; leave model selection unset so the account's Auto/default applies, and account/CLI defaults decide both.
 - Do not select or pin a model in dispatch instructions or set an effort.
 - **Independent tasks may run in parallel; dependent tasks must be sequenced.** If a dispatch fails with a provider rate-limit error, serialize: at most 2 in flight for the rest of the phase.
 - Each dispatch prompt includes: the plan path (absolute), the task number, the working directory, and "Do not dispatch or invoke any subagents."
