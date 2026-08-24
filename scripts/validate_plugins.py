@@ -67,124 +67,75 @@ ORCHESTRATE_STRICT_MD = [
     "plugins/ed3d-orchestrate/commands/orchestrate.md",
 ]
 
+OVERRIDE_KEYS = ("model:", "reasoning_effort:", "effort:", "effortLevel:")
+FORBIDDEN_GLOBAL_STRINGS = ("gemini-3.5-flash", "Always pin", "pinned model")
+
+# These are raw-text bans. Preferred literals are allowed only inside the bounded
+# dispatch sections below; agent frontmatter and command prose remain model-free.
 POLICY_FORBIDDEN = {
-    # Copilot dispatch prompts must inherit model and effort selection from account Auto/default.
-    "plugins/ed3d-orchestrate/agents/adversary.agent.md": [
-        "model:", "reasoning_effort:", "effort:", "effortLevel:",
-        "kimi-k3", "gpt-5.6-luna", "gemini-3.5-flash", "Always pin", "pinned model",
-    ],
-    "plugins/ed3d-orchestrate/agents/plan-reviewer.agent.md": [
-        "model:", "reasoning_effort:", "effort:", "effortLevel:",
-        "kimi-k3", "gpt-5.6-luna", "gemini-3.5-flash", "Always pin", "pinned model",
-    ],
-    "plugins/ed3d-orchestrate/commands/orchestrate.md": [
-        "model:", "reasoning_effort:", "effort:", "effortLevel:",
-        "kimi-k3", "gpt-5.6-luna", "gemini-3.5-flash", "Always pin", "pinned model",
-    ],
-    "plugins/ed3d-orchestrate/skills/adversarial-review/SKILL.md": [
-        "model:", "reasoning_effort:", "effort:", "effortLevel:",
-        "kimi-k3", "gpt-5.6-luna", "gemini-3.5-flash", "Always pin", "pinned model",
-    ],
-    "plugins/ed3d-orchestrate/skills/orchestrating-the-loop/SKILL.md": [
-        "model:", "reasoning_effort:", "effort:", "effortLevel:",
-        "kimi-k3", "gpt-5.6-luna", "gemini-3.5-flash", "Always pin", "pinned model",
-    ],
-    "plugins/ed3d-orchestrate/skills/scout-sweep/SKILL.md": [
-        "model:", "reasoning_effort:", "effort:", "effortLevel:",
-        "kimi-k3", "gpt-5.6-luna", "gemini-3.5-flash", "Always pin", "pinned model",
-    ],
+    path: list(OVERRIDE_KEYS) + list(FORBIDDEN_GLOBAL_STRINGS)
+    for path in ORCHESTRATE_STRICT_MD
 }
 
 AGENT_DISPATCH_POLICY = (
     "Invoke the named resource through Copilot's native agent/subagent delegation mechanism; "
     "do not call the Skill loader for agent names."
 )
+DISPATCH_BEGIN = "<!-- DISPATCH-PROTOCOL:BEGIN -->"
+DISPATCH_END = "<!-- DISPATCH-PROTOCOL:END -->"
+SKILL_PATHS = [
+    "plugins/ed3d-orchestrate/skills/adversarial-review/SKILL.md",
+    "plugins/ed3d-orchestrate/skills/orchestrating-the-loop/SKILL.md",
+    "plugins/ed3d-orchestrate/skills/scout-sweep/SKILL.md",
+]
+OLD_NO_MODEL_NEEDLES = (
+    "Use the account's Auto/default model selection",
+    "Do not select a model or set an effort override",
+    "leaving model selection to the account's Auto/default",
+    "Do not select or pin a model in dispatch instructions",
+    "Send no model or effort override",
+    "without model or effort parameters",
+    "without model or effort overrides",
+    "leave model selection unset",
+    "account/CLI defaults decide both",
+    "Auto/default applies",
+)
 
 POLICY_TARGETS = {
     "plugins/ed3d-orchestrate/agents/adversary.agent.md": [
-        "critical", "high", "medium", "low",
-        "VERDICT: SHIP", "VERDICT: FIX-FIRST", "has_critical_or_high",
-        # no-writes rule (0.3.0): the adversary never maintains loop state
+        "critical", "high", "medium", "low", "VERDICT: SHIP", "VERDICT: FIX-FIRST", "has_critical_or_high",
         "you never write `.ed3d/orchestrate-state.json`, never modify the working tree, never commit",
-        # 0.3.3: nonce-tagged output contract + hardened no-writes posture
-        "VERDICT: SHIP [nonce]",
-        "report, do not repair",
+        "VERDICT: SHIP [nonce]", "report, do not repair",
     ],
     "plugins/ed3d-orchestrate/skills/adversarial-review/SKILL.md": [
-        AGENT_DISPATCH_POLICY,
-        "critical", "high", "medium", "low",
-        "VERDICT: SHIP", "VERDICT: FIX-FIRST", "max_rounds",
-        # verdict write-back atomicity (0.3.0): commit in the same turn as parsing
-        "A verdict that is not in the state file does not exist",
-        "The guardrail reads the file, not your intentions",
-        # review.history round record (0.3.0)
-        '"history": [',
-        '{"round": 1, "verdict": "FIX-FIRST", "critical_high": 1, "advisory": 6}',
-        '{"round": 2, "verdict": "SHIP", "critical_high": 0, "advisory": 0}',
-        '{"round": N, "verdict": "PENDING", "critical_high": 0, "advisory": 0, "note": "adversary protocol failure"}',
-        # resume reconciliation (0.3.0)
-        "Resume reconciliation",
-        # verdict commit checklist with re-read verification (0.3.1)
-        "Use this checklist and do not skip the re-read",
-        "consecutive_blocks: 0",
-        # git baseline precondition (0.3.1)
-        "both are valid commits in the current git repository",
-        # terminal-state verification (0.3.1)
-        "verify the terminal state",
-        # 0.3.3: nonce generated on arming (incl. re-arm for a new loop),
-        # head_sha refresh after fixer commits, PENDING re-arm before re-dispatch
-        "Whenever a review arms — including re-arming an existing inactive review block",
-        "refresh `head_sha` in the state file to the new full 40-character",
-        'and `verdict` to `"PENDING"` in the same state-file write',
-        # Auto/default model inheritance: model and effort selection are intentionally omitted.
-        "Use the account's Auto/default model selection",
-        "Do not select a model or set an effort override",
+        AGENT_DISPATCH_POLICY, "critical", "high", "medium", "low", "VERDICT: SHIP", "VERDICT: FIX-FIRST", "max_rounds",
+        "A verdict that is not in the state file does not exist", "The guardrail reads the file, not your intentions", '"history": [',
+        '{"round": 1, "verdict": "FIX-FIRST", "critical_high": 1, "advisory": 6}', '{"round": 2, "verdict": "SHIP", "critical_high": 0, "advisory": 0}',
+        '{"round": N, "verdict": "PENDING", "critical_high": 0, "advisory": 0, "note": "adversary protocol failure"}', "Resume reconciliation",
+        "Use this checklist and do not skip the re-read", "consecutive_blocks: 0", "both are valid commits in the current git repository",
+        "verify the terminal state", "Whenever a review arms — including re-arming an existing inactive review block",
+        "refresh `head_sha` in the state file to the new full 40-character", 'and `verdict` to `"PENDING"` in the same state-file write',
+        DISPATCH_BEGIN, DISPATCH_END, "adversary` dispatch", "task-bug-fixer", "kimi-k3", "gpt-5.6-luna", "reasoning_effort=", "pre-start rejection",
+        "rate-limit", "protocol-failure", "ambiguous", "full response",
     ],
     "plugins/ed3d-orchestrate/skills/orchestrating-the-loop/SKILL.md": [
-        AGENT_DISPATCH_POLICY,
-        # verdict write-back atomicity (0.3.0)
-        "A verdict that is not in the state file does not exist",
-        "The guardrail reads the file, not your intentions",
-        "Commit the verdict to the state file in the same turn first",
-        # review.history round record (0.3.0)
-        '"history": [',
-        '{"round": 1, "verdict": "FIX-FIRST", "critical_high": 1, "advisory": 6}',
-        '{"round": 2, "verdict": "SHIP", "critical_high": 0, "advisory": 0}',
-        # git baseline preflight + SHA recording (0.3.1)
-        "verify the git baseline",
-        '"base_sha": null',
-        '"head_sha": null',
-        "record `head_sha` from the current `HEAD`",
-        # terminal-state verification before final report (0.3.1)
-        "review.consecutive_blocks: 0",
-        # auto-resume rationalization (0.3.1)
-        "Not if a state file exists. Resume the recorded loop first.",
-        # 0.3.3: loop nonce schema + lifecycle, PENDING-means-in-flight invariant,
-        # write-guard as the mechanical enforcement layer
-        '"nonce": null',
-        "generate a fresh nonce",
-        "adversary dispatch is in flight",
-        "write-guard hook mechanically blocks write-class tool calls",
-        # Auto/default model inheritance: model selection is intentionally omitted.
-        "leaving model selection to the account's Auto/default",
-        "Do not select or pin a model in dispatch instructions",
+        AGENT_DISPATCH_POLICY, "A verdict that is not in the state file does not exist", "The guardrail reads the file, not your intentions",
+        "Commit the verdict to the state file in the same turn first", '"history": [',
+        '{"round": 1, "verdict": "FIX-FIRST", "critical_high": 1, "advisory": 6}', '{"round": 2, "verdict": "SHIP", "critical_high": 0, "advisory": 0}',
+        "verify the git baseline", '"base_sha": null', '"head_sha": null', "record `head_sha` from the current `HEAD`",
+        "review.consecutive_blocks: 0", "Not if a state file exists. Resume the recorded loop first.", '"nonce": null', "generate a fresh nonce",
+        "adversary dispatch is in flight", "write-guard hook mechanically blocks write-class tool calls", DISPATCH_BEGIN, DISPATCH_END,
+        "plan-reviewer", "task-implementor-fast", "kimi-k3", "gpt-5.6-luna", "reasoning_effort=", "pre-start rejection",
+        "rate-limit", "protocol-failure", "ambiguous", "full response",
     ],
     "plugins/ed3d-orchestrate/skills/scout-sweep/SKILL.md": [
-        AGENT_DISPATCH_POLICY,
-        "Use the account's Auto/default model selection",
-        "Send no model or effort override",
+        AGENT_DISPATCH_POLICY, DISPATCH_BEGIN, DISPATCH_END, "scouts use pinned-first", "gpt-5.6-luna", "reasoning_effort=", "pre-start rejection",
+        "rate-limit", "protocol-failure", "ambiguous", "full response",
     ],
     "plugins/ed3d-orchestrate/commands/orchestrate.md": [
-        # auto-resume mode (0.3.1) + bounded state-file discovery (0.3.2)
-        "records an in-progress loop (`review.active` is true, or `review.verdict` is not `SHIP`)",
-        "do not restart or repeat completed phases",
-        "resolve the root with `git rev-parse --show-toplevel`",
-        "never request access to directories outside the project",
-        # git baseline requirement (0.3.1)
-        "requires a local git repository with at least one commit",
-        "record a valid `BASE_SHA` before builder execution",
-        # 0.3.3: resume cd-to-root after locating the state file
-        "`cd` to the repository root you resolved it from",
+        "records an in-progress loop (`review.active` is true, or `review.verdict` is not `SHIP`)", "do not restart or repeat completed phases",
+        "resolve the root with `git rev-parse --show-toplevel`", "never request access to directories outside the project",
+        "requires a local git repository with at least one commit", "record a valid `BASE_SHA` before builder execution", "`cd` to the repository root you resolved it from",
     ],
 }
 
@@ -368,6 +319,93 @@ def check_command():
         fail("%s: missing argument-hint" % path)
 
 
+def dispatch_section(text, path):
+    """Return the sole bounded dispatch section, rejecting malformed markers."""
+    begins = [m.start() for m in re.finditer(re.escape(DISPATCH_BEGIN), text)]
+    ends = [m.start() for m in re.finditer(re.escape(DISPATCH_END), text)]
+    if len(begins) != 1 or len(ends) != 1:
+        fail("%s: expected exactly one non-nested dispatch marker pair" % path)
+        return ""
+    if begins[0] >= ends[0]:
+        fail("%s: dispatch markers reversed" % path)
+        return ""
+    body = text[begins[0] + len(DISPATCH_BEGIN):ends[0]]
+    if DISPATCH_BEGIN in body or DISPATCH_END in body:
+        fail("%s: nested dispatch markers" % path)
+        return ""
+    return body
+
+
+def check_dispatch_protocol():
+    combined = "\n".join(read(path) for path in SKILL_PATHS)
+    for needle in OLD_NO_MODEL_NEEDLES:
+        if needle in combined:
+            fail("skills: residual old no-model dispatch phrase %r" % needle)
+    sections = {path: dispatch_section(read(path), path) for path in SKILL_PATHS}
+    for path in ORCHESTRATE_STRICT_MD:
+        body = read(path)
+        if path in sections:
+            bounded = sections[path]
+            outside = body.replace(DISPATCH_BEGIN + bounded + DISPATCH_END, "")
+            for literal in ("kimi-k3", "gpt-5.6-luna"):
+                if literal in outside:
+                    fail("%s: preferred literal outside bounded dispatch section %r" % (path, literal))
+        else:
+            for literal in ("kimi-k3", "gpt-5.6-luna"):
+                if literal in body:
+                    fail("%s: preferred literal outside dispatch skill %r" % (path, literal))
+    required = {
+        SKILL_PATHS[0]: ("kimi-k3", "high", "adversary` dispatch", "task-bug-fixer", "gpt-5.6-luna", "medium"),
+        SKILL_PATHS[1]: ("kimi-k3", "high", "plan-reviewer", "gpt-5.6-luna", "medium", "task-implementor-fast"),
+        SKILL_PATHS[2]: ("gpt-5.6-luna", "low", "scouts use pinned-first"),
+    }
+    for path, needles in required.items():
+        body = sections[path]
+        for needle in needles:
+            if needle not in body:
+                fail("%s: missing bounded dispatch needle %r" % (path, needle))
+        if re.search(r"\b(?:high|medium|low)\b", body) is None:
+            fail("%s: bounded section has no effort literal" % path)
+        for forbidden in ("critical/high", "medium/low"):
+            # Severity labels are allowed and must not be mistaken for effort syntax.
+            if forbidden in body and re.search(r"reasoning_effort=\"(?:high|medium|low)\"", body) is None:
+                fail("%s: bounded section contains severity label %r but no explicit reasoning_effort override; severity labels do not satisfy the effort requirement" % (path, forbidden))
+    # Exact site-level positives, scoped to the relevant skill rather than a
+    # protocol paragraph in an unrelated file.
+    site_needles = {
+        SKILL_PATHS[0]: ("Site requirement: the primary `adversary` dispatch is pinned-first", "For the FIX-FIRST branch, dispatch `task-bug-fixer`"),
+        SKILL_PATHS[1]: ("Dispatch `plan-reviewer`", "Site requirement: the Phase 4 `task-implementor-fast` dispatch is pinned-first"),
+        SKILL_PATHS[2]: ("Site requirement: scouts use pinned-first",),
+    }
+    for path, needles in site_needles.items():
+        body = sections[path]
+        for needle in needles:
+            if needle not in body:
+                fail("%s: missing explicit dispatch-site needle %r" % (path, needle))
+
+    # A role/site must carry its exact model+reasoning_effort pair on the
+    # dispatch line itself.  Checking these together prevents severity labels
+    # such as ``critical/high`` from satisfying an effort-only substring test.
+    site_override_pairs = {
+        SKILL_PATHS[0]: (
+            ("adversary` dispatch", 'model="kimi-k3"', 'reasoning_effort="high"'),
+            ("task-bug-fixer", 'model="gpt-5.6-luna"', 'reasoning_effort="medium"'),
+        ),
+        SKILL_PATHS[1]: (
+            ("plan-reviewer", 'model="kimi-k3"', 'reasoning_effort="high"'),
+            ("task-implementor-fast", 'model="gpt-5.6-luna"', 'reasoning_effort="medium"'),
+        ),
+        SKILL_PATHS[2]: (
+            ("each scout's first attempt", 'model="gpt-5.6-luna"', 'reasoning_effort="low"'),
+        ),
+    }
+    for path, pairs in site_override_pairs.items():
+        body = sections[path]
+        for role, model, effort in pairs:
+            if not any(role in line and model in line and effort in line for line in body.splitlines()):
+                fail("%s: missing exact model+reasoning_effort pair for %r" % (path, role))
+
+
 def check_policy_strings():
     for path, needles in POLICY_TARGETS.items():
         if not os.path.isfile(os.path.join(ROOT, path)):
@@ -385,6 +423,7 @@ def check_policy_strings():
         for needle in needles:
             if needle in text:
                 fail("%s: forbidden policy string present %r" % (path, needle))
+    check_dispatch_protocol()
 
 
 def check_agent_markup_repo_wide():

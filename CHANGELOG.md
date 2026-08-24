@@ -1,5 +1,17 @@
 # Changelog
 
+## [ed3d-orchestrate] [0.4.0]
+
+Restores preferred dispatch attempts with a conservative Auto fallback for Auto-only accounts.
+
+**New:**
+- Pinned-first procedural dispatch for reviewers, builders/fixers, and scouts, with one fallback only after explicit visible pre-start model/account/effort rejection.
+- Deterministic `scripts/test-dispatch-protocol.py` checks for bounded sections, retry composition, all dispatch sites, and stale-policy negatives.
+
+**Changed:**
+- Dispatch skills retain model-free Copilot agent frontmatter while documenting preferred model/effort attempts and separate rate-limit/protocol-failure handling.
+- README, validator, and roadmap now describe best-effort hard-coded IDs, unknown dispatch-error semantics, and transcript/report-only fallback provenance.
+
 ## [ed3d-orchestrate] [0.3.5]
 
 Fixes Copilot-native delegation for orchestrated agents.

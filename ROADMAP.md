@@ -2,7 +2,7 @@
 
 Durable context for humans and agents picking this work up after a break. Each entry says what it is, why it matters, and the concrete next action. Update this file when items land or new ones emerge — it is the project's memory.
 
-Last updated: 2026-08-18
+Last updated: 2026-08-20
 
 ## Next project: subagent session watcher (CLI/TUI)
 
@@ -71,7 +71,7 @@ The multi-round review arc validated live end to end on toyapp (Copilot CLI 1.0.
 
 - **Hard-enforced context gate.** A `preToolUse` hook variant that blocks the first builder dispatch while a `gate_pending` flag is set in `.ed3d/orchestrate-state.json`. Build only if the prose gate (0.2.1) proves skippable in practice. Next action: watch one real run; if the gate gets blown through, build this.
 - **Upstream PR to `ed3dai/ed3d-plugins`.** Agent twins + `ed3d-orchestrate`. PR text lives at `~/Projects/project-orpheus/copilot-fixes/PR_DESCRIPTION.md` but covers through 0.1.0 only. Next action: refresh it (pinned dispatch models 0.1.1, handoff/resume 0.2.0, mandatory gate 0.2.1, review-loop hardening 0.3.0–0.3.3) before opening.
-- **Model-id verification — superseded by 0.3.4.** 0.3.4 removed model and `reasoning_effort` pins from orchestrate dispatch instructions for Auto-only accounts, including the `claude-haiku-4.5` medium-effort rejection observed during validation. The old `kimi-k3`/`gpt-5.6-luna`/`gemini-3.5-flash` catalog re-verification follow-up no longer applies unless explicit model selection returns.
+- **Model-id verification — superseded by 0.3.4; dormant under 0.4.0.** catalog verification remains dormant: no future catalog/API/operator verification event has occurred. This plan's prose pins, validator needles, and release do not count as verification. Reactivate catalog verification only after a future event confirms that explicit model selection is available again; next action is to record that event and re-check `kimi-k3`/`gpt-5.6-luna` against it before changing the dispatch policy.
 - **`settings.json` subagents schema discrepancy.** The Copilot config-dir reference documents `subagents.agents.<name>` (`model`/`effortLevel`/`contextTier`), but hand-edits on 1.0.80 produced fallback models and an unexpected `minimal` effort (dispatch-time params won). Prefer the `/subagents` picker. Next action: consider filing an upstream issue against `github/copilot-cli` with the evidence from the 2026-08-16 session.
 - **Seeded-defect canary.** The 2026-08-16 forensic pass ruled out reviewer laziness but not misses. Inject 2–3 known-subtle bugs into a shipped commit range and dispatch the adversary blind, as a positive control on detection sensitivity. Next action: pick a shipped range, seed the bugs on a scratch branch, run one adversary dispatch, compare its findings against the seeded list.
 - **Per-loop nonce in the verdict block — landed in 0.3.3.** The false positive was observed live (2026-08-17, see findings above); the nonce protocol shipped in 0.3.3 (nonce-gated scan, write-guard, PENDING-means-in-flight re-arm invariant).

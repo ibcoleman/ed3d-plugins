@@ -34,13 +34,15 @@ This plugin is written for Copilot CLI's native delegation. Its skills use Copil
 
 ## Agents and model selection
 
-The Copilot-native `*.agent.md` twins intentionally omit a `model` frontmatter key. Each agent inherits the account's Copilot Auto/default model, so the same plugin works across accounts and model catalogs without stale model IDs or forced tier changes. The twins preserve role descriptions and bodies from their Claude Code originals; they do not prescribe a runtime model.
+The Copilot-native `*.agent.md` twins intentionally omit a `model` frontmatter key. Dispatch is pinned-first on best-effort hard-coded IDs, while the twins preserve role descriptions and bodies from their Claude Code originals and remain directly Auto-compatible.
 
-| Agent group | Role | Model selection |
-|-------------|------|-----------------|
-| `adversary`, `plan-reviewer` | Review and plan gates | Account Auto/default |
-| `task-implementor-fast`, `task-bug-fixer` | Builders and review fixes | Account Auto/default |
-| Research agents and `haiku-general-purpose` | Scouts | Account Auto/default |
+| Agent group | Role | Preferred dispatch |
+|-------------|------|--------------------|
+| `adversary`, `plan-reviewer` | Review and plan gates | `kimi-k3` / `high` |
+| `task-implementor-fast`, `task-bug-fixer` | Builders and review fixes | `gpt-5.6-luna` / `medium` |
+| Research agents and `haiku-general-purpose` | Scouts | `gpt-5.6-luna` / `low` |
+
+On each delegated dispatch, the preferred model/effort is attempted first. Only a visible pre-start rejection explicitly identifying model, account availability, or effort support triggers one fallback with both overrides omitted (Auto); ambiguity and any started dispatch are never retried as model fallback. Direct agent launches remain Auto-compatible.
 
 Dispatched agents come from `ed3d-plan-and-execute`, `ed3d-research-agents`, and `ed3d-basic-agents`; install those plugins when using their roles.
 
@@ -48,9 +50,9 @@ The orchestrator is the main session — there is deliberately no orchestrator a
 
 ## Model and effort defaults
 
-**For marketplace users: no model configuration is required.** Dispatch instructions send no model or effort override; the account's Auto/default and CLI defaults decide both.
+Dispatch uses best-effort hard-coded model IDs and reasoning efforts: reviewers use `kimi-k3` / `high`, builders and fixers use `gpt-5.6-luna` / `medium`, and scouts use `gpt-5.6-luna` / `low`. This is procedural pinned-first guidance, not a mechanically intercepted runtime feature. If Copilot visibly rejects the preferred model, account, or effort before any start signal, retry exactly once with both overrides omitted so Auto-only accounts continue to work; a started or ambiguous outcome is not retried as model fallback. Existing rate-limit and protocol-failure retries remain separate.
 
-You may still configure Copilot's own account or `~/.copilot/settings.json` defaults if you want a preferred model or effort. Such configuration is optional and is applied by Copilot rather than by this plugin. Do not edit the agent twins or dispatch instructions to add model or effort overrides: omission is the compatibility policy.
+No agent frontmatter pins are added, so direct agent launches remain compatible with Auto-only accounts. The observed `claude-haiku-4.5` medium-effort rejection motivates the fallback; Copilot's dispatch-error semantics are otherwise unknown and require visible evidence before any fallback.
 
 ## State File
 
@@ -110,13 +112,13 @@ The loop maintains `.ed3d/orchestrate-state.json` in the working repository. It 
 - **Terminal-state enforcement (0.3.1):** a final `SHIP` state only allows a stop when it is consistent — `active: false`, `verdict: "SHIP"`, `consecutive_blocks: 0`. Otherwise the hook blocks, pointing at the adversarial-review skill's terminal-state verification — repeatedly until repaired, bounded by the 7-block safety cap.
 - Respects the CLI's 8-consecutive-block cap: after 7 blocks without recorded progress it allows with a warning, so a session can never hard-lock. The loop resets the counter on every round/verdict transition, so it only trips when stops are being blocked with no forward motion.
 
-Run the tests: `python3 plugins/ed3d-orchestrate/hooks/test-check-review-loop.py` (standalone, zero dependencies).
+Run the tests: `python3 plugins/ed3d-orchestrate/hooks/test-check-review-loop.py` and `python3 scripts/test-dispatch-protocol.py` (standalone, zero dependencies).
 
 ## The Adversary Write-Guard
 
 `hooks/adversary-write-guard.py` runs on preToolUse (write-class tools) and mechanically enforces the adversary's no-writes rule: while `review.active` is true and `review.verdict` is `PENDING` — the adversary-in-flight window, at every round — write-class tool calls (`edit`, `create`, `apply_patch`, plus legacy Edit/Write variants) from subagent contexts (`call_`-prefixed session ids) are blocked with a diagnostic reason; the reviewer reports findings instead of fixing them. The orchestrator (UUID session id), builders, and the bug-fixer (which runs while verdict is `FIX-FIRST`) are never blocked. If a crashed loop leaves stale active+PENDING state on disk and legitimate subagent writes get blocked, delete or repair `.ed3d/orchestrate-state.json` — the block reason names its path. Known gap: writes via bash redirection are not intercepted; the prose rule remains the backstop there.
 
-Run its tests: `python3 plugins/ed3d-orchestrate/hooks/test-adversary-write-guard.py` (standalone, zero dependencies).
+Run its tests: `python3 plugins/ed3d-orchestrate/hooks/test-adversary-write-guard.py` (standalone, zero dependencies). The dispatch-protocol suite is `python3 scripts/test-dispatch-protocol.py`.
 
 ## Requirements
 
@@ -149,5 +151,5 @@ After `/clear`, run `/ed3d-orchestrate:orchestrate` with no arguments — when a
 
 - Facet discipline (e.g. read-only planning) is enforced by instruction, not by harness. The guardrail hook narrows this gap only for the review loop.
 - The hook's stale-verdict scan is nonce-gated (0.3.3): it matches only this loop's `VERDICT: SHIP [<nonce>]` marker, so stale verdict strings from a prior loop in the same session can no longer false-match. Residual gaps: pre-0.3.3 in-flight state files carry no nonce and skip the scan; a crashed loop can leave stale active+PENDING state that write-blocks subagents until the state file is repaired; bash-redirection writes bypass the write-guard (prose rule remains).
-- Model selection is intentionally inherited from Copilot Auto/default; if you need a preferred model, configure it in Copilot rather than editing the plugin's agent twins or skill dispatch templates.
+- Dispatch model selection is pinned-first best-effort guidance with a conservative explicit-pre-start-rejection-only Auto fallback. It is not a mechanically intercepted runtime feature; unknown dispatch-error semantics and catalog drift require visible evidence, and the observed `claude-haiku-4.5` medium-effort rejection remains representative. Preferred-vs-fallback provenance is transcript/report-only and does not survive `/clear` or resume; the existing state schema is not extended to persist it.
 - Parallel dispatch can trip provider rate limits; the skills fall back to serial/small-batch dispatch on rate-limit errors.

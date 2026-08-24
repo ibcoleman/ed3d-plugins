@@ -87,10 +87,25 @@ Every AC must be verifiable by a named test or command. Every cited file path mu
 
 The plan does not proceed to execution until it survives review.
 
-1. Invoke the named resource through Copilot's native agent/subagent delegation mechanism; do not call the Skill loader for agent names. Dispatch `plan-reviewer` (ed3d-orchestrate) without model or effort overrides, leaving model selection to the account's Auto/default; account/CLI defaults decide both. Do not select or pin a model in dispatch instructions. Pass `PLAN_PATH` (absolute) and `REPO_ROOT` (absolute). **Print its full response.**
+<!-- DISPATCH-PROTOCOL:BEGIN -->
+#### Bounded pinned-first dispatch protocol (plan-reviewer and Phase 4 builder dispatches)
+
+1. Invoke the named resource through Copilot's native agent/subagent delegation mechanism; do not call the Skill loader for agent names. Dispatch `plan-reviewer` (ed3d-orchestrate) with preferred model `kimi-k3` and effort `high`, expressed as `model="kimi-k3"` and `reasoning_effort="high"` overrides on the preferred attempt. Pass `PLAN_PATH` (absolute), `REPO_ROOT` (absolute), the exact role, prompt, and working directory. A one-time Auto fallback omits both overrides only after an explicit pre-start rejection identifying model, account availability, or effort support; preserve all other dispatch inputs. A started/no-verdict result uses the existing protocol-failure path with no model fallback, an ambiguous refusal is terminal, and rate-limit wait/retry/serialization remains separate. Report preferred success, fallback reason/retry/result, protocol failure, or ambiguity and print the full response.
+
+The shared fallback rule is exactly one Auto fallback with both `model` and `reasoning_effort` overrides omitted; a fallback rejection is terminal. Rate-limit retries do not consume the model fallback; started/no-verdict uses protocol-failure without model fallback; ambiguity is terminal. Each lineage allows at most three semantic submissions, never issues the fallback twice, and never combines protocol retry with model fallback. Never combine protocol retry with model fallback.
 2. Parse the verdict (`VERDICT: SHIP` / `VERDICT: FIX-FIRST`, `has_critical_or_high`).
 3. On critical/high findings: fix the plan document, then re-dispatch `plan-reviewer` **once**.
 4. If critical/high findings persist after the single re-review: **stop and present them to the operator.** The operator decides whether to revise again, proceed with acknowledged risks, or abandon. Do not proceed to execution on your own authority with open critical/high plan findings.
+
+For the Phase 4 `task-implementor-fast` dispatch, use preferred model `gpt-5.6-luna` and effort `medium`, expressed as `model="gpt-5.6-luna"` and `reasoning_effort="medium"` overrides on the preferred attempt. Invoke the named resource through Copilot's native agent/subagent delegation mechanism; do not call the Skill loader for agent names. Preserve the exact implementation prompt, task, plan path, role, and working directory. A one-time Auto fallback omits both overrides only after an explicit pre-start rejection identifying model, account availability, or effort support.
+
+The same bounded protocol applies to the `plan-reviewer` dispatch above: preferred `kimi-k3` / `high`, then one Auto fallback omitting both overrides only after an explicit pre-start model/account/effort rejection. A started/no-verdict result uses the existing protocol-failure path without model fallback, ambiguity is terminal without retry, and rate-limit wait/retry/serialization remains separate. Each lineage permits preferred, at most one Auto fallback, and at most one separately named protocol-failure re-dispatch; never duplicate a fallback or combine protocol retry with model fallback. Report preferred success, fallback reason/retry/result, protocol failure, or ambiguity, and print every full response.
+
+The shared fallback rule is exactly one Auto fallback with both `model` and `reasoning_effort` overrides omitted; a fallback rejection is terminal. Rate-limit retries do not consume the model fallback; started/no-verdict uses protocol-failure without model fallback; ambiguity is terminal. Each lineage allows at most three semantic submissions, never issues the fallback twice, and never combines protocol retry with model fallback.
+
+Site requirement: the Phase 4 `task-implementor-fast` dispatch is pinned-first with `gpt-5.6-luna` / `medium`, then one Auto fallback omitting both overrides only after an explicit pre-start model/account/effort rejection, preserving the exact implementation prompt, task, plan path, role, and working directory. Rate-limit and protocol-failure handling remain separate.
+
+<!-- DISPATCH-PROTOCOL:END -->
 
 ## Context Handoff Gate (stop after plan review)
 
@@ -115,8 +130,6 @@ If you are resuming into this phase (`phase: "execute"` in the state file), read
 
 Fan out builders. One bounded task per dispatch — a builder gets a task it can complete fully with tests and a commit.
 
-- Invoke the named resource through Copilot's native agent/subagent delegation mechanism; do not call the Skill loader for agent names. Dispatch `task-implementor-fast` (ed3d-plan-and-execute) for implementation tasks without model or effort overrides; leave model selection unset so the account's Auto/default applies, and account/CLI defaults decide both.
-- Do not select or pin a model in dispatch instructions or set an effort.
 - **Independent tasks may run in parallel; dependent tasks must be sequenced.** If a dispatch fails with a provider rate-limit error, serialize: at most 2 in flight for the rest of the phase.
 - Each dispatch prompt includes: the plan path (absolute), the task number, the working directory, and "Do not dispatch or invoke any subagents."
 

@@ -28,7 +28,18 @@ Effort levels:
 
 ## Step 2: Dispatch the Scouts
 
-Use the account's Auto/default model selection for scouts. Send no model or effort override; the account's CLI defaults decide both.
+<!-- DISPATCH-PROTOCOL:BEGIN -->
+#### Bounded pinned-first dispatch protocol
+
+Use preferred model `gpt-5.6-luna` and effort `low` on each scout's first attempt, expressed as `model="gpt-5.6-luna"` and `reasoning_effort="low"` overrides. Match each focus area to the best researcher agent. Invoke every named resource through Copilot's native agent/subagent delegation mechanism; do not call the Skill loader for agent names. Preserve the exact focus, questions, success criterion, return format, role, and working directory.
+
+If and only if an explicit pre-start rejection identifies model availability, account availability, or effort support, make exactly one Auto fallback for that scout with both `model` and `reasoning_effort` overrides omitted. Preserve every other dispatch input; a fallback rejection is terminal. Rate-limit errors retain the existing wait/retry-once and serial/small-batch behavior, do not consume the model fallback, and do not change model/effort policy. Started/no-verdict follows the existing protocol-failure path without model fallback; ambiguous/no-start outcomes are terminal and never retried.
+
+Each dispatch lineage permits at most three semantic submissions: preferred, one Auto fallback, and one separately named protocol-failure re-dispatch. never issues the fallback twice. never combines protocol retry with model fallback. Report preferred success, explicit rejection plus fallback retry, fallback result, protocol failure, or ambiguous refusal prominently, and print each full response. The shared fallback rule is one Auto fallback with both the `model` and `reasoning_effort` overrides omitted; a started/no-verdict protocol-failure re-dispatch preserves Auto selection and is not a model fallback.
+
+Site requirement: scouts use pinned-first `gpt-5.6-luna` / `low`, then one Auto fallback omitting both overrides only after explicit pre-start model/account/effort rejection; rate-limit and protocol-failure handling remain separate.
+
+<!-- DISPATCH-PROTOCOL:END -->
 
 Match each focus area to the best researcher agent. Invoke the named resource through Copilot's native agent/subagent delegation mechanism; do not call the Skill loader for agent names. Reference agents by both bare and qualified name in your dispatch so they resolve under any install:
 
