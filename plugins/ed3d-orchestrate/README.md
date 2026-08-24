@@ -38,7 +38,7 @@ The Copilot-native `*.agent.md` twins intentionally omit a `model` frontmatter k
 
 | Agent group | Role | Preferred dispatch |
 |-------------|------|--------------------|
-| `adversary`, `plan-reviewer` | Review and plan gates | `kimi-k3` / `high` |
+| `adversary`, `plan-reviewer` | Review and plan gates | `gpt-5.5` / `xhigh` |
 | `task-implementor-fast`, `task-bug-fixer` | Builders and review fixes | `gpt-5.6-luna` / `medium` |
 | Research agents and `haiku-general-purpose` | Scouts | `gpt-5.6-luna` / `low` |
 
