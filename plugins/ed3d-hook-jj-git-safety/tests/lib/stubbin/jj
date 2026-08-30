@@ -1,0 +1,112 @@
+#!/bin/sh
+# Controlled `jj` (Jujutsu) stub for OFFLINE tests only.
+#
+# Emulates exactly the subset of the jj CLI that the real hook
+# (hooks/jj-preflight.sh) invokes. It never touches a real workspace, never
+# contacts a remote, and never mutates files. State is injected via env vars,
+# so a test can drive the reported repository metadata and jj exit status.
+#
+# Invocations emulated (real-jj argument shapes):
+#   jj root --ignore-working-copy              -> echo $JJ_STUB_ROOT   (exit per $JJ_STUB_ROOT_FAIL)
+#   jj --ignore-working-copy log -r 'conflicts()' --no-graph -T <tpl>
+#                                              -> print <tpl> once per matched rev when
+#                                                 $JJ_STUB_CONFLICTS set (count $JJ_STUB_CONFLICT_COUNT);
+#                                                 with $JJ_STUB_CONFLICTS_EMPTY set, print only a bare
+#                                                 newline per matched rev (a conflicted rev whose
+#                                                 description is empty — "\n" per rev, real-jj style);
+#                                                 empty when unset. Exit per $JJ_STUB_LOG_FAIL.
+#   jj --ignore-working-copy bookmark list -r '@'
+#                                              -> print $JJ_STUB_BOOKMARK when set; exit per
+#                                                 $JJ_STUB_BOOKMARK_FAIL.
+#
+# Template semantics: a real `jj log -T <tpl>` prints the template text once
+# per matching revision and exits 0. We honor the `-T` value so the simulation
+# is grounded in real-jj behavior rather than a hard-coded marker. With
+# JJ_STUB_RECORD_TPL set to a file path, the log query additionally records the
+# exact `-T` template it received (proving the hook uses the valid real-jj
+# `-T description` form, not `-T x`).
+#
+# Exit-status semantics: real jj exits 0 on success even when a query has zero
+# matches, and non-zero only on an actual error. Set the matching
+# JJ_STUB_<SUB>_FAIL=1 to model a broken/non-functional jj.
+#
+# No-remote guard: with JJ_STUB_REMOTE=1, any invocation that is NOT one of the
+# hook's known read-only metadata queries (root/log/bookmark) is treated as an
+# attempted network/remote operation: it prints REMOTE-CALLED on stderr and
+# exits 1. This proves the hook never delegates remote-touching work to jj.
+#
+# To model "jj unavailable", simply remove this stub from PATH.
+set -u
+
+sub=""; tmpl=""; rev=""
+tmpl_next=0; rev_next=0
+for a in "$@"; do
+    case "$a" in
+        --ignore-working-copy|--no-graph) continue ;;
+        -T|--template) tmpl_next=1; continue ;;
+        -r|--rev)      rev_next=1;  continue ;;
+        root|log|bookmark) sub="$a"; continue ;;
+        *)
+            if [ "$tmpl_next" = 1 ]; then tmpl="$a"; tmpl_next=0; continue; fi
+            if [ "$rev_next" = 1 ];  then rev="$a";  rev_next=0;  continue; fi
+            continue
+            ;;
+    esac
+done
+
+# Real jj treats `group <cmd>`/`-c`/compound forms as out of scope; the hook only
+# ever asks for root/log/bookmark. Guard: any non-query invocation under the
+# remote guard is a would-be remote/network operation.
+if [ "${JJ_STUB_REMOTE:-0}" = 1 ] && [ "$sub" != root ] && [ "$sub" != log ] && [ "$sub" != bookmark ]; then
+    printf 'REMOTE-CALLED\n' >&2
+    exit 1
+fi
+
+case "$sub" in
+    root)
+        if [ "${JJ_STUB_ROOT_FAIL:-0}" = 1 ]; then printf 'jj: internal error\n' >&2; exit 1; fi
+        printf '%s\n' "${JJ_STUB_ROOT:-.}"
+        exit 0
+        ;;
+    log)
+        if [ "${JJ_STUB_LOG_FAIL:-0}" = 1 ]; then printf 'jj: internal error\n' >&2; exit 1; fi
+        # Record the -T template actually passed. Guards the valid `-T description`
+        # invocation the hook must use for the conflict query (a real template
+        # keyword and real-jj arg shape, not a hard-coded marker or a `-T x` form).
+        # JJ_STUB_RECORD_TPL is a file path; the record proves single-invocation
+        # and exact template text.
+        if [ -n "${JJ_STUB_RECORD_TPL:-}" ]; then
+            printf 'tpl=%s\n' "${tmpl:-}" > "$JJ_STUB_RECORD_TPL"
+        fi
+        # Emit the -T template once per matched (conflicting) rev, real-jj style.
+        # In JJ_STUB_CONFLICTS_EMPTY mode, each matched (conflicting) rev has an
+        # EMPTY description: emit only a bare newline per rev (real `jj log -T
+        # description` prints "\n" for an empty description). Command
+        # substitution strips that trailing newline, so the hook MUST detect the
+        # conflict by raw output size — see the wc -c guard in the packaged hook.
+        if [ -n "${JJ_STUB_CONFLICTS:-}" ]; then
+            n="${JJ_STUB_CONFLICT_COUNT:-1}"
+            i=0
+            while [ "$i" -lt "$n" ]; do
+                if [ -n "${JJ_STUB_CONFLICTS_EMPTY:-}" ]; then
+                    printf '\n'
+                else
+                    printf '%s\n' "${tmpl:-}"
+                fi
+                i=$((i+1))
+            done
+        fi
+        exit 0
+        ;;
+    bookmark)
+        if [ "${JJ_STUB_BOOKMARK_FAIL:-0}" = 1 ]; then printf 'jj: internal error\n' >&2; exit 1; fi
+        if [ -n "${JJ_STUB_BOOKMARK:-}" ]; then
+            printf '%s\n' "${JJ_STUB_BOOKMARK:-b}"
+        fi
+        exit 0
+        ;;
+    "")
+        # No recognized subcommand; the hook never hits this path, be silent.
+        exit 0
+        ;;
+esac

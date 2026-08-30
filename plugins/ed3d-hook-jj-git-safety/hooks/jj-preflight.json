@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "./jj-preflight.sh",
+        "matcher": "^bash$",
+        "timeoutSec": 5,
+        "cwd": ".github/hooks"
+      }
+    ]
+  }
+}

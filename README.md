@@ -1,6 +1,8 @@
 # ed3d-plugins
 
-This is my collection of plugins that I use on a day-to-day basis for getting stuff done with Claude Code. Most of these are development-oriented in some way or another, but also often end up being useful for other things. Product design, general research, accidentally becoming my homelab sysadmin—these are a lot of what I've learned so far and what I've found helpful.
+This is ed3d's development toolkit — plugins and packages I use day-to-day for getting stuff done, now targeting GitHub Copilot CLI (since 2026-08-31). Most of these are development-oriented in some way or another, but also often end up being useful for other things. Product design, general research, accidentally becoming my homelab sysadmin—these are a lot of what I've learned so far and what I've found helpful. Claude Code artifacts remain published as frozen legacy; new work is Copilot-first/Copilot-only.
+
+> **Repository status: Copilot-targeted.** As of 2026-08-31 this repository targets GitHub Copilot CLI. New packages and all new development target Copilot CLI; Claude Code is no longer developed against, and its existing plugins are frozen legacy. Copilot CLI reads [`AGENTS.md`](AGENTS.md) as its primary instructions, and the current project's plan and deferred follow-ups live in [`ROADMAP.md`](ROADMAP.md).
 
 The big stick in this repository is `ed3d-plan-and-execute`, which implements an "RPI" (research-plan-implement) loop that I think does a really good job of avoiding hallucination in the planning stages, adhering to high-level product requirements, avoiding drift between design planning and implementation planning, and reviewing the results such that you get out the other end not just what you asked for, but what you actually wanted.
 
@@ -38,6 +40,8 @@ Rough Idea
 | **`ed3d-hook-skill-reinforcement`** | UserPromptSubmit hook that reinforces the need to activate skills—helps make sure skills actually get used. Requires `ed3d-extending-claude` to work |
 | **`ed3d-hook-claudemd-reminder`** | PostToolUse hook that reminds to update CLAUDE.md before committing |
 | **`ed3d-hook-security-hardening`** | PreToolUse and PostToolUse hooks that catch secrets leakage patterns |
+| **`ed3d-hook-jj-git-safety`** | Copilot-only. GitHub Copilot CLI-only preToolUse hook and Agent Skill that protect jj + Git repositories from unsafe mutations and jj metadata pollution; POSIX/WSL only |
+| **`ed3d-completion-summary`** | Copilot CLI-only. sessionStart reminder hook + work-completion-summary Agent Skill for end-of-work executive handoffs. Inactive by default; explicit deployment required |
 | **`ed3d-session-reflection`** | EXPERIMENTAL. Session awareness and conversation review tooling. Requires `ed3d-extending-claude` |
 | **`ed3d-orchestrate`** | EXPERIMENTAL. Polytoken-style orchestration loop for Copilot CLI: scout-sweep research, plan-review gate, builder fanout, adversarial review rounds with a stop-guardrail hook. Requires `ed3d-research-agents` + `ed3d-plan-and-execute` |
 
@@ -48,13 +52,15 @@ Rough Idea
 /plugin marketplace add https://github.com/ed3dai/ed3d-plugins.git
 ```
 
-### Install plugins
-All plugins are available from the `ed3d-plugins` marketplace:
+### Install Claude Code plugins (legacy, frozen)
+The historical Claude Code plugins are available from the `ed3d-plugins` marketplace, but are frozen legacy — no new Claude Code development happens here:
 ```bash
 /plugin install ed3d-plan-and-execute@ed3d-plugins
 /plugin install ed3d-house-style@ed3d-plugins
 # ... etc
 ```
+
+`ed3d-hook-jj-git-safety` is a Copilot CLI-only package and is not installed through Claude Code. Follow its plugin README for explicit Copilot hook and skill deployment. `ed3d-completion-summary` follows the same model — see its plugin README for explicit Copilot hook and skill install paths.
 
 ## Repository Structure
 
@@ -73,6 +79,8 @@ ed3d-plugins/
 │   ├── ed3d-hook-skill-reinforcement/
 │   ├── ed3d-hook-claudemd-reminder/
 │   ├── ed3d-hook-security-hardening/
+│   ├── ed3d-hook-jj-git-safety/
+│   ├── ed3d-completion-summary/
 │   ├── ed3d-session-reflection/
 │   └── ed3d-orchestrate/
 └── README.md
@@ -80,10 +88,11 @@ ed3d-plugins/
 
 ## Copilot CLI compatibility
 
-These plugins are authored for Claude Code, but load under GitHub Copilot CLI as well:
+This repository is Copilot-targeted. Copilot CLI reads the repo-root [`AGENTS.md`](AGENTS.md) as its primary instructions, so those are the canonical agent instructions and conventions. The plugins and packages here load under GitHub Copilot CLI:
 
 - Every role agent ships a Copilot-native `<name>.agent.md` twin beside its Claude Code `<name>.md` definition — same body and strict-quoted frontmatter. Twins are model-free; model-family separation is applied at dispatch time via pinned-first attempts with Auto fallback. The Claude Code files are untouched.
 - `ed3d-orchestrate` is a Copilot-first plugin implementing the full orchestration loop (scout sweep → plan → plan review → builders → adversarial review rounds) with an `agentStop` guardrail hook. It installs under Claude Code too, but its workflow targets Copilot sessions. Model bindings are pinned by the plugin's skills on every dispatch — no extra configuration required.
+- `ed3d-hook-jj-git-safety` is a Copilot CLI-only package. It is cataloged here for distribution and versioning, but it is not a Claude Code plugin; deploy its hook and skill using the package README's Copilot instructions.
 
 Run `python3 scripts/validate_plugins.py` (stdlib-only, zero dependencies) to check twin frontmatter, model bindings, dispatch-protocol rules, and marketplace integrity. Run `python3 scripts/test-dispatch-protocol.py` alongside the orchestrate hook suites for focused dispatch-protocol coverage.
 

@@ -115,7 +115,7 @@ POLICY_TARGETS = {
         "Use this checklist and do not skip the re-read", "consecutive_blocks: 0", "both are valid commits in the current git repository",
         "verify the terminal state", "Whenever a review arms — including re-arming an existing inactive review block",
         "refresh `head_sha` in the state file to the new full 40-character", 'and `verdict` to `"PENDING"` in the same state-file write',
-        DISPATCH_BEGIN, DISPATCH_END, "adversary` dispatch", "task-bug-fixer", "kimi-k3", "gpt-5.6-luna", "reasoning_effort=", "pre-start rejection",
+        DISPATCH_BEGIN, DISPATCH_END, "adversary` dispatch", "task-bug-fixer", "gpt-5.5", "gpt-5.6-luna", "reasoning_effort=", "pre-start rejection",
         "rate-limit", "protocol-failure", "ambiguous", "full response",
     ],
     "plugins/ed3d-orchestrate/skills/orchestrating-the-loop/SKILL.md": [
@@ -355,8 +355,8 @@ def check_dispatch_protocol():
                 if literal in body:
                     fail("%s: preferred literal outside dispatch skill %r" % (path, literal))
     required = {
-        SKILL_PATHS[0]: ("kimi-k3", "high", "adversary` dispatch", "task-bug-fixer", "gpt-5.6-luna", "medium"),
-        SKILL_PATHS[1]: ("kimi-k3", "high", "plan-reviewer", "gpt-5.6-luna", "medium", "task-implementor-fast"),
+        SKILL_PATHS[0]: ("gpt-5.5", "xhigh", "adversary` dispatch", "task-bug-fixer", "gpt-5.6-luna", "medium"),
+        SKILL_PATHS[1]: ("gpt-5.5", "xhigh", "plan-reviewer", "gpt-5.6-luna", "medium", "task-implementor-fast"),
         SKILL_PATHS[2]: ("gpt-5.6-luna", "low", "scouts use pinned-first"),
     }
     for path, needles in required.items():
@@ -388,11 +388,11 @@ def check_dispatch_protocol():
     # such as ``critical/high`` from satisfying an effort-only substring test.
     site_override_pairs = {
         SKILL_PATHS[0]: (
-            ("adversary` dispatch", 'model="kimi-k3"', 'reasoning_effort="high"'),
+            ("adversary` dispatch", 'model="gpt-5.5"', 'reasoning_effort="xhigh"'),
             ("task-bug-fixer", 'model="gpt-5.6-luna"', 'reasoning_effort="medium"'),
         ),
         SKILL_PATHS[1]: (
-            ("plan-reviewer", 'model="kimi-k3"', 'reasoning_effort="high"'),
+            ("plan-reviewer", 'model="gpt-5.5"', 'reasoning_effort="xhigh"'),
             ("task-implementor-fast", 'model="gpt-5.6-luna"', 'reasoning_effort="medium"'),
         ),
         SKILL_PATHS[2]: (
@@ -520,23 +520,36 @@ def check_marketplace():
         target = os.path.normpath(os.path.join(ROOT, source))
         if not os.path.isdir(target):
             fail("marketplace.json: source of %r does not resolve: %s" % (entry.get("name"), source))
-    orchestrate = next((e for e in entries if e.get("name") == "ed3d-orchestrate"), None)
-    if orchestrate is not None:
-        target = os.path.normpath(os.path.join(ROOT, orchestrate["source"]))
-        if not os.path.isdir(os.path.join(target, ".claude-plugin")):
-            fail("marketplace.json: ed3d-orchestrate source has no .claude-plugin/plugin.json dir")
-        plugin_json = os.path.join(target, ".claude-plugin", "plugin.json")
-        if os.path.isfile(plugin_json):
-            try:
-                with open(plugin_json, encoding="utf-8") as handle:
-                    manifest = json.load(handle)
-                if manifest.get("version") != orchestrate.get("version"):
-                    fail("marketplace/plugin.json version mismatch for ed3d-orchestrate: %r vs %r"
-                         % (orchestrate.get("version"), manifest.get("version")))
-            except (OSError, json.JSONDecodeError) as exc:
-                fail("ed3d-orchestrate plugin.json: %s" % exc)
-        else:
-            fail("ed3d-orchestrate: missing .claude-plugin/plugin.json")
+    # Every marketplace entry must have a manifest whose identity and version
+    # agree with the catalog. Most plugins keep it at the plugin root; the
+    # legacy hook plugins keep it under hooks/.claude-plugin/.
+    for entry in entries:
+        name = entry.get("name")
+        source = entry.get("source")
+        if not isinstance(source, str):
+            continue
+        target = os.path.normpath(os.path.join(ROOT, source))
+        manifest_candidates = [
+            os.path.join(target, ".claude-plugin", "plugin.json"),
+            os.path.join(target, "hooks", ".claude-plugin", "plugin.json"),
+        ]
+        plugin_json = next((candidate for candidate in manifest_candidates
+                            if os.path.isfile(candidate)), None)
+        if plugin_json is None:
+            fail("marketplace.json: %r source has no .claude-plugin/plugin.json manifest" % name)
+            continue
+        try:
+            with open(plugin_json, encoding="utf-8") as handle:
+                manifest = json.load(handle)
+        except (OSError, json.JSONDecodeError) as exc:
+            fail("%s: %s" % (os.path.relpath(plugin_json, ROOT), exc))
+            continue
+        if manifest.get("name") != name:
+            fail("marketplace/plugin.json name mismatch for %r: %r vs %r"
+                 % (name, name, manifest.get("name")))
+        if manifest.get("version") != entry.get("version"):
+            fail("marketplace/plugin.json version mismatch for %s: %r vs %r"
+                 % (name, entry.get("version"), manifest.get("version")))
 
 
 def scan_preexisting_warnings():

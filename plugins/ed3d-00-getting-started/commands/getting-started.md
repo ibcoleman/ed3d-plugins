@@ -50,5 +50,7 @@ Rough Idea
 | **`ed3d-hook-skill-reinforcement`** | UserPromptSubmit hook that reinforces the need to activate skills—helps make sure skills actually get used. Requires `ed3d-extending-claude` to work |
 | **`ed3d-hook-claudemd-reminder`** | PostToolUse hook that reminds to update CLAUDE.md before committing |
 | **`ed3d-hook-security-hardening`** | PreToolUse and PostToolUse hooks that catch secrets leakage patterns |
+| **`ed3d-hook-jj-git-safety`** | GitHub Copilot CLI-only preToolUse hook and Agent Skill that protect jj + Git repositories from unsafe mutations and jj metadata pollution; POSIX/WSL only |
+| **`ed3d-completion-summary`** | Copilot CLI-only sessionStart reminder hook + work-completion-summary Agent Skill for end-of-work executive handoffs; inactive by default, POSIX/WSL only |
 | **`ed3d-session-reflection`** | EXPERIMENTAL. Session awareness and conversation review tooling. Requires `ed3d-extending-claude` |
 | **`ed3d-orchestrate`** | EXPERIMENTAL. Polytoken-style orchestration loop for Copilot CLI: scout-sweep research, plan-review gate, builder fanout, adversarial review rounds with a stop-guardrail hook. Requires `ed3d-research-agents` + `ed3d-plan-and-execute` |

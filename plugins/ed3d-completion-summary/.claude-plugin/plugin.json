@@ -1,0 +1,19 @@
+{
+    "name": "ed3d-completion-summary",
+    "description": "GitHub Copilot CLI-only sessionStart reminder hook and Agent Skill for preparing concise executive handoffs when substantial work items complete. POSIX/WSL only; explicit deployment required.",
+    "version": "0.1.0",
+    "author": {
+        "name": "Ed",
+        "email": "ed@ed3d.net"
+    },
+    "homepage": "https://github.com/ed3dai/ed3d-plugins",
+    "repository": "https://github.com/ed3dai/ed3d-plugins",
+    "license": "UNLICENSED",
+    "keywords": [
+        "skills",
+        "hooks",
+        "workflow",
+        "summary",
+        "copilot-only"
+    ]
+}

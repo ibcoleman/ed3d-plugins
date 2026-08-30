@@ -2,7 +2,27 @@
 
 Durable context for humans and agents picking this work up after a break. Each entry says what it is, why it matters, and the concrete next action. Update this file when items land or new ones emerge — it is the project's memory.
 
-Last updated: 2026-08-20
+Last updated: 2026-08-31
+
+## Decision: repository is Copilot-targeted; Claude Code abandoned (2026-08-31)
+
+- **What changed:** `AGENTS.md` is now the canonical instruction file at the repo root and is what Copilot CLI reads as primary instructions; `CLAUDE.md` is reduced to a short pointer to `AGENTS.md` (avoiding duplicated/conflicting conventions). README and the marketplace catalog are reframed around Copilot targeting, with Claude Code plugins explicitly labeled as frozen legacy.
+- **What it means:** No new Claude Code development. Existing Claude Code plugins remain published as frozen legacy (bugfix-only at the operator's discretion). Agent twins and the marketplace catalog remain as-is. Future packages follow the Copilot-only pattern (`ed3d-hook-jj-git-safety` / `ed3d-completion-summary`).
+- **Rationale:** Operator decision. The repo had already drifted Copilot-first via `ed3d-orchestrate` and `ed3d-hook-jj-git-safety`; and Copilot CLI reads repo-root `AGENTS.md` as primary instructions, making it the natural canonical instruction file.
+
+## Landed: ed3d-completion-summary 0.1.0 — Copilot-targeted designation + completion-summary package (2026-08-31)
+
+- Added `ed3d-completion-summary`, the second Copilot-only package (after `ed3d-hook-jj-git-safety`): a deterministic `sessionStart` reminder hook (advisory `additionalContext` nudge) plus the `work-completion-summary` Agent Skill ported from the internal Polytoken skill. Offline POSIX suite (69 assertions), two adversarial review rounds (round 1 FIX-FIRST: 4 medium + 10 low, all fixed; round 2 SHIP).
+- Empirical findings baked into its docs (Copilot CLI 1.0.80, GitHub Docs 2026-08-31): prompt files (`*.prompt.md`) are IDE-only — CLI skill slash invocation (`/work-completion-summary`) is the equivalent mechanism; `userPromptSubmitted` command-hook output is dropped, so `sessionStart` is the documented injection point (its exact output JSON shape is pattern-documented, not schema-documented — flagged as a limitation); skill description hard cap is 1024 chars with silent drop (copilot-cli#3494); documented skill frontmatter keys are `name`/`description`(/`license`/`allowed-tools`) only — `user-invocable` is a custom-agent field.
+- Deployment: inactive by default; hook copies into a target repo's `.github/hooks/`, skill into `~/.copilot/skills/work-completion-summary/` (or `.github/skills/`), `/skills reload` after copying.
+- Residual risk: sessionStart output shape and hook schema are coupled to the installed CLI version; re-verify after upgrades. Follow-up: the sibling `ed3d-hook-jj-git-safety` package still cites the dead `agentskills.io/skills` URL (→ `agentskills.io/specification`) in two files — fix in its next maintenance pass.
+
+## Landed: opt-in jj/Git safety plugin (2026-08-30)
+
+- Added `ed3d-hook-jj-git-safety` as a separately cataloged Copilot package rather than extending an existing hook plugin: its concern is repository-mutation safety, distinct from secrets hardening, CLAUDE.md reminders, and orchestration.
+- The plugin ships the tested Copilot CLI v1 `preToolUse` hook and generic protected-repository skill with offline POSIX coverage. It is intentionally **not** a Claude Code plugin and ships no Claude `hooks.json` registration.
+- It is inactive by default and POSIX/WSL-only. Deployment requires explicitly copying the hook config and script into the target repository's `.github/hooks/` and copying the skill into a Copilot skills directory; cataloging it here does not deploy either artifact, and Claude Code is intentionally unsupported.
+- Residual risk: hook schema and payload behavior are coupled to the installed CLI versions; re-verify after upgrades.
 
 ## Next project: subagent session watcher (CLI/TUI)
 
@@ -69,6 +89,7 @@ The multi-round review arc validated live end to end on toyapp (Copilot CLI 1.0.
 
 ## Deferred follow-ups (ed3d-orchestrate)
 
+- **`ed3d-hook-jj-git-safety` SKILL.md carries `user-invocable: false`, which is not a documented Copilot skill frontmatter key** (documented Copilot skill keys: `name`, `description`, `license`, `allowed-tools`; description is hard-capped at 1024 chars with silent drop). Next action: drop the key in a maintenance pass and re-verify skill discovery.
 - **Hard-enforced context gate.** A `preToolUse` hook variant that blocks the first builder dispatch while a `gate_pending` flag is set in `.ed3d/orchestrate-state.json`. Build only if the prose gate (0.2.1) proves skippable in practice. Next action: watch one real run; if the gate gets blown through, build this.
 - **Upstream PR to `ed3dai/ed3d-plugins`.** Agent twins + `ed3d-orchestrate`. PR text lives at `~/Projects/project-orpheus/copilot-fixes/PR_DESCRIPTION.md` but covers through 0.1.0 only. Next action: refresh it (pinned dispatch models 0.1.1, handoff/resume 0.2.0, mandatory gate 0.2.1, review-loop hardening 0.3.0–0.3.3) before opening.
 - **Model-id verification — superseded by 0.3.4; dormant under 0.4.0.** catalog verification remains dormant: no future catalog/API/operator verification event has occurred. This plan's prose pins, validator needles, and release do not count as verification. Reactivate catalog verification only after a future event confirms that explicit model selection is available again; next action is to record that event and re-check `kimi-k3`/`gpt-5.6-luna` against it before changing the dispatch policy.
