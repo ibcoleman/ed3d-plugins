@@ -115,7 +115,7 @@ POLICY_TARGETS = {
         "Use this checklist and do not skip the re-read", "consecutive_blocks: 0", "both are valid commits in the current git repository",
         "verify the terminal state", "Whenever a review arms — including re-arming an existing inactive review block",
         "refresh `head_sha` in the state file to the new full 40-character", 'and `verdict` to `"PENDING"` in the same state-file write',
-        DISPATCH_BEGIN, DISPATCH_END, "adversary` dispatch", "task-bug-fixer", "kimi-k3", "gpt-5.6-luna", "reasoning_effort=", "pre-start rejection",
+        DISPATCH_BEGIN, DISPATCH_END, "adversary` dispatch", "task-bug-fixer", "gpt-5.6-sol", "gpt-5.6-luna", "reasoning_effort=", "pre-start rejection",
         "rate-limit", "protocol-failure", "ambiguous", "full response",
     ],
     "plugins/ed3d-orchestrate/skills/orchestrating-the-loop/SKILL.md": [
@@ -125,7 +125,7 @@ POLICY_TARGETS = {
         "verify the git baseline", '"base_sha": null', '"head_sha": null', "record `head_sha` from the current `HEAD`",
         "review.consecutive_blocks: 0", "Not if a state file exists. Resume the recorded loop first.", '"nonce": null', "generate a fresh nonce",
         "adversary dispatch is in flight", "write-guard hook mechanically blocks write-class tool calls", DISPATCH_BEGIN, DISPATCH_END,
-        "plan-reviewer", "task-implementor-fast", "kimi-k3", "gpt-5.6-luna", "reasoning_effort=", "pre-start rejection",
+        "plan-reviewer", "task-implementor-fast", "gpt-5.6-luna", "reasoning_effort=", "pre-start rejection",
         "rate-limit", "protocol-failure", "ambiguous", "full response",
     ],
     "plugins/ed3d-orchestrate/skills/scout-sweep/SKILL.md": [
@@ -347,17 +347,17 @@ def check_dispatch_protocol():
         if path in sections:
             bounded = sections[path]
             outside = body.replace(DISPATCH_BEGIN + bounded + DISPATCH_END, "")
-            for literal in ("kimi-k3", "gpt-5.6-luna"):
+            for literal in ("gpt-5.6-sol", "gpt-5.6-luna"):
                 if literal in outside:
                     fail("%s: preferred literal outside bounded dispatch section %r" % (path, literal))
         else:
-            for literal in ("kimi-k3", "gpt-5.6-luna"):
+            for literal in ("gpt-5.6-sol", "gpt-5.6-luna"):
                 if literal in body:
                     fail("%s: preferred literal outside dispatch skill %r" % (path, literal))
     required = {
-        SKILL_PATHS[0]: ("kimi-k3", "high", "adversary` dispatch", "task-bug-fixer", "gpt-5.6-luna", "medium"),
-        SKILL_PATHS[1]: ("kimi-k3", "high", "plan-reviewer", "gpt-5.6-luna", "medium", "task-implementor-fast"),
-        SKILL_PATHS[2]: ("gpt-5.6-luna", "low", "scouts use pinned-first"),
+        SKILL_PATHS[0]: ("gpt-5.6-sol", "medium", "adversary` dispatch", "task-bug-fixer", "gpt-5.6-luna", "high"),
+        SKILL_PATHS[1]: ("gpt-5.6-luna", "high", "plan-reviewer", "gpt-5.6-luna", "high", "task-implementor-fast"),
+        SKILL_PATHS[2]: ("gpt-5.6-luna", "high", "scouts use pinned-first"),
     }
     for path, needles in required.items():
         body = sections[path]
@@ -388,15 +388,15 @@ def check_dispatch_protocol():
     # such as ``critical/high`` from satisfying an effort-only substring test.
     site_override_pairs = {
         SKILL_PATHS[0]: (
-            ("adversary` dispatch", 'model="kimi-k3"', 'reasoning_effort="high"'),
-            ("task-bug-fixer", 'model="gpt-5.6-luna"', 'reasoning_effort="medium"'),
+            ("adversary` dispatch", 'model="gpt-5.6-sol"', 'reasoning_effort="medium"'),
+            ("task-bug-fixer", 'model="gpt-5.6-luna"', 'reasoning_effort="high"'),
         ),
         SKILL_PATHS[1]: (
-            ("plan-reviewer", 'model="kimi-k3"', 'reasoning_effort="high"'),
-            ("task-implementor-fast", 'model="gpt-5.6-luna"', 'reasoning_effort="medium"'),
+            ("plan-reviewer", 'model="gpt-5.6-luna"', 'reasoning_effort="high"'),
+            ("task-implementor-fast", 'model="gpt-5.6-luna"', 'reasoning_effort="high"'),
         ),
         SKILL_PATHS[2]: (
-            ("each scout's first attempt", 'model="gpt-5.6-luna"', 'reasoning_effort="low"'),
+            ("each scout's first attempt", 'model="gpt-5.6-luna"', 'reasoning_effort="high"'),
         ),
     }
     for path, pairs in site_override_pairs.items():

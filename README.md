@@ -82,7 +82,7 @@ ed3d-plugins/
 
 These plugins are authored for Claude Code, but load under GitHub Copilot CLI as well:
 
-- Every role agent ships a Copilot-native `<name>.agent.md` twin beside its Claude Code `<name>.md` definition — same body and strict-quoted frontmatter. Twins are model-free; model-family separation is applied at dispatch time via pinned-first attempts with Auto fallback. The Claude Code files are untouched.
+- Every role agent ships a Copilot-native `<name>.agent.md` twin beside its Claude Code `<name>.md` definition — same body and strict-quoted frontmatter. Twins are model-free; orchestrated model selection is applied at dispatch time via pinned-first attempts with Auto fallback (`gpt-5.6-sol` / medium for the adversary, `gpt-5.6-luna` / high for everything else). Direct agent launches outside that dispatch path inherit the account/CLI default unless configured through Copilot's `/subagents` command. The Claude Code files are untouched.
 - `ed3d-orchestrate` is a Copilot-first plugin implementing the full orchestration loop (scout sweep → plan → plan review → builders → adversarial review rounds) with an `agentStop` guardrail hook. It installs under Claude Code too, but its workflow targets Copilot sessions. Model bindings are pinned by the plugin's skills on every dispatch — no extra configuration required.
 
 Run `python3 scripts/validate_plugins.py` (stdlib-only, zero dependencies) to check twin frontmatter, model bindings, dispatch-protocol rules, and marketplace integrity. Run `python3 scripts/test-dispatch-protocol.py` alongside the orchestrate hook suites for focused dispatch-protocol coverage.

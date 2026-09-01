@@ -53,7 +53,7 @@ Whenever a review arms — including re-arming an existing inactive review block
 <!-- DISPATCH-PROTOCOL:BEGIN -->
 #### Bounded pinned-first dispatch protocol
 
-The `adversary` dispatch uses preferred model `kimi-k3` and effort `high` on its first attempt, expressed as `model="kimi-k3"` and `reasoning_effort="high"` overrides. Invoke the named resource through Copilot's native agent/subagent delegation mechanism; do not call the Skill loader for agent names. Preserve the exact review prompt, plan path, `BASE_SHA`, `HEAD_SHA`, `NONCE`, prior issues, role, and working directory.
+The `adversary` dispatch uses preferred model `gpt-5.6-sol` and effort `medium` on its first attempt, expressed as `model="gpt-5.6-sol"` and `reasoning_effort="medium"` overrides. Invoke the named resource through Copilot's native agent/subagent delegation mechanism; do not call the Skill loader for agent names. Preserve the exact review prompt, plan path, `BASE_SHA`, `HEAD_SHA`, `NONCE`, prior issues, role, and working directory.
 
 A fallback is permitted exactly once, and only when an explicit pre-start rejection identifies model availability, account availability, or effort support. Fallback rule: make exactly one Auto fallback with both `model` and `reasoning_effort` overrides omitted; preserve every other dispatch input. A fallback rejection is terminal.
 
@@ -61,9 +61,9 @@ Classify a rate-limit error separately: use the existing wait, retry-once, then 
 
 The dispatch lineage allows at most three semantic submissions: preferred, the sole Auto fallback, and one separately named protocol-failure re-dispatch. never issues the fallback twice, never combines protocol retry with model fallback, or duplicates an ambiguous outcome. Report preferred success, explicit rejection plus fallback retry, fallback result, protocol failure, or ambiguous refusal prominently, and print the full response after every attempt before taking the next action.
 
-Site requirement: the primary `adversary` dispatch is pinned-first with `kimi-k3` / `high`, then one Auto fallback omitting both overrides only after explicit pre-start model/account/effort rejection, preserving the exact review prompt, plan path, SHAs, nonce, prior issues, role, and working directory. Rate-limit and protocol-failure handling remain separate.
+Site requirement: the primary `adversary` dispatch is pinned-first with `gpt-5.6-sol` / `medium`, then one Auto fallback omitting both overrides only after explicit pre-start model/account/effort rejection, preserving the exact review prompt, plan path, SHAs, nonce, prior issues, role, and working directory. Rate-limit and protocol-failure handling remain separate.
 
-For the FIX-FIRST branch, dispatch `task-bug-fixer` with preferred model `gpt-5.6-luna` and effort `medium`, expressed as `model="gpt-5.6-luna"` and `reasoning_effort="medium"` overrides. Its one Auto fallback omits both overrides only after the same explicit pre-start rejection, preserving the exact fixer prompt, findings, role, path, and working directory. Rate-limit and protocol-failure handling remain separate.
+For the FIX-FIRST branch, dispatch `task-bug-fixer` with preferred model `gpt-5.6-luna` and effort `high`, expressed as `model="gpt-5.6-luna"` and `reasoning_effort="high"` overrides. Its one Auto fallback omits both overrides only after the same explicit pre-start rejection, preserving the exact fixer prompt, findings, role, path, and working directory. Rate-limit and protocol-failure handling remain separate.
 
 <!-- DISPATCH-PROTOCOL:END -->
 
