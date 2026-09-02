@@ -60,21 +60,21 @@ def test_preferred_attempt_is_bounded_and_role_specific():
     adversary = section(SKILLS["adversarial"])
     loop = section(SKILLS["loop"])
     scouts = section(SKILLS["scouts"])
-    assert 'adversary` dispatch' in adversary and 'kimi-k3` / `high' in adversary
+    assert 'adversary` dispatch' in adversary and 'gpt-5.5` / `xhigh' in adversary
     assert "task-bug-fixer" in adversary and 'gpt-5.6-luna` and effort `medium' in adversary
-    assert "plan-reviewer" in loop and 'kimi-k3` and effort `high' in loop
+    assert "plan-reviewer" in loop and 'gpt-5.5` and effort `xhigh' in loop
     assert "task-implementor-fast" in loop and 'gpt-5.6-luna` and effort `medium' in loop
     assert "scouts use pinned-first `gpt-5.6-luna` / `low`" in scouts
     expected_pairs = (
-        ('model="kimi-k3"', 'reasoning_effort="high"'),
+        ('model="gpt-5.5"', 'reasoning_effort="xhigh"'),
         ('model="gpt-5.6-luna"', 'reasoning_effort="medium"'),
         ('model="gpt-5.6-luna"', 'reasoning_effort="low"'),
     )
     for body in (adversary, loop, scouts):
         assert any(model in line and effort in line for line in body.splitlines() for model, effort in expected_pairs)
-    assert any('adversary` dispatch' in line and 'model="kimi-k3"' in line and 'reasoning_effort="high"' in line for line in adversary.splitlines())
+    assert any('adversary` dispatch' in line and 'model="gpt-5.5"' in line and 'reasoning_effort="xhigh"' in line for line in adversary.splitlines())
     assert any("task-bug-fixer" in line and 'model="gpt-5.6-luna"' in line and 'reasoning_effort="medium"' in line for line in adversary.splitlines())
-    assert any("plan-reviewer" in line and 'model="kimi-k3"' in line and 'reasoning_effort="high"' in line for line in loop.splitlines())
+    assert any("plan-reviewer" in line and 'model="gpt-5.5"' in line and 'reasoning_effort="xhigh"' in line for line in loop.splitlines())
     assert any("task-implementor-fast" in line and 'model="gpt-5.6-luna"' in line and 'reasoning_effort="medium"' in line for line in loop.splitlines())
     assert any("each scout's first attempt" in line and 'model="gpt-5.6-luna"' in line and 'reasoning_effort="low"' in line for line in scouts.splitlines())
     for path in STRICT_TARGETS:
@@ -196,7 +196,7 @@ def test_version_readme_roadmap_sync():
     manifest = json.loads(text(ROOT / "plugins/ed3d-orchestrate/.claude-plugin/plugin.json"))
     marketplace = json.loads(text(ROOT / ".claude-plugin/marketplace.json"))
     entry = next(item for item in marketplace["plugins"] if item["name"] == "ed3d-orchestrate")
-    assert manifest["version"] == entry["version"] == "0.4.0"
+    assert manifest["version"] == entry["version"] == "0.4.1"
     changelog = text(ROOT / "CHANGELOG.md")
     assert "## [ed3d-orchestrate] [0.4.0]" in changelog
     readme = text(ROOT / "plugins/ed3d-orchestrate/README.md")
