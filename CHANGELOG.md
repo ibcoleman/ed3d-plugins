@@ -1,6 +1,6 @@
 # Changelog
 
-## [ed3d-orchestrate] [0.4.1]
+## [ed3d-orchestrate] [0.4.2]
 
 Updates the preferred Copilot dispatch models for the expanded model catalog.
 
@@ -8,6 +8,34 @@ Updates the preferred Copilot dispatch models for the expanded model catalog.
 - The adversary now prefers `gpt-5.6-sol` with medium effort.
 - Plan reviewers, builders, fixers, scouts, and other orchestrated roles now prefer `gpt-5.6-luna` with high effort.
 - Documents clarify that direct agent launches outside orchestrate inherit account/CLI defaults because Copilot-native agent twins remain model-free.
+## [ed3d-completion-summary] [0.1.0]
+
+Copilot CLI-only package for end-of-work executive handoffs, and the repository designation as Copilot-targeted.
+
+**New:**
+- `work-completion-summary` Agent Skill (ported from the internal Polytoken skill): ground-truth-first verification, one-page executive summary format, communication rules.
+- Non-blocking Copilot CLI v1 `sessionStart` reminder hook injecting advisory additionalContext; offline POSIX test suite.
+
+**Changed:**
+- Repository now targets GitHub Copilot CLI (AGENTS.md canonical instructions; CLAUDE.md reduced to a pointer; README and marketplace reframed); Claude Code plugins are frozen legacy.
+
+## [ed3d-hook-jj-git-safety] [1.1.0]
+
+Narrows the package to GitHub Copilot CLI, its intended runtime target.
+
+**Changed:**
+- Removed the Claude Code `hooks.json` registration, Claude payload/output normalization, and Claude-specific tests; the native Copilot CLI v1 hook is now the only supported runtime.
+- Updated package, marketplace, README, and skill documentation to remove Claude installation claims and report the Copilot-only deployment model.
+- Retained the `<>` redirection hardening and 421-assertion offline POSIX suite (33 scope, 56 package-layout, 332 preflight assertions).
+
+## [ed3d-hook-jj-git-safety] [1.0.0]
+
+Adds an opt-in jj/Git safety plugin for protected repositories.
+
+**New:**
+- Copilot CLI v1 `preToolUse` hook that blocks unsafe Git/Jujutsu mutations, force pushes, tracked `.jj` internals, and unsafe shell wrappers.
+- `jj-git-safety` Agent Skill and offline POSIX test suite.
+- Explicit inactive-by-default, POSIX/WSL-only installation and limitation documentation.
 
 ## [ed3d-orchestrate] [0.4.0]
 

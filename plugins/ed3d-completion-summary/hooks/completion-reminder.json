@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "type": "command",
+        "bash": "./completion-reminder.sh",
+        "timeoutSec": 5,
+        "cwd": ".github/hooks"
+      }
+    ]
+  }
+}

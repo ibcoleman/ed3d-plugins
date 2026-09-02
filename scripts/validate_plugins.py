@@ -520,23 +520,36 @@ def check_marketplace():
         target = os.path.normpath(os.path.join(ROOT, source))
         if not os.path.isdir(target):
             fail("marketplace.json: source of %r does not resolve: %s" % (entry.get("name"), source))
-    orchestrate = next((e for e in entries if e.get("name") == "ed3d-orchestrate"), None)
-    if orchestrate is not None:
-        target = os.path.normpath(os.path.join(ROOT, orchestrate["source"]))
-        if not os.path.isdir(os.path.join(target, ".claude-plugin")):
-            fail("marketplace.json: ed3d-orchestrate source has no .claude-plugin/plugin.json dir")
-        plugin_json = os.path.join(target, ".claude-plugin", "plugin.json")
-        if os.path.isfile(plugin_json):
-            try:
-                with open(plugin_json, encoding="utf-8") as handle:
-                    manifest = json.load(handle)
-                if manifest.get("version") != orchestrate.get("version"):
-                    fail("marketplace/plugin.json version mismatch for ed3d-orchestrate: %r vs %r"
-                         % (orchestrate.get("version"), manifest.get("version")))
-            except (OSError, json.JSONDecodeError) as exc:
-                fail("ed3d-orchestrate plugin.json: %s" % exc)
-        else:
-            fail("ed3d-orchestrate: missing .claude-plugin/plugin.json")
+    # Every marketplace entry must have a manifest whose identity and version
+    # agree with the catalog. Most plugins keep it at the plugin root; the
+    # legacy hook plugins keep it under hooks/.claude-plugin/.
+    for entry in entries:
+        name = entry.get("name")
+        source = entry.get("source")
+        if not isinstance(source, str):
+            continue
+        target = os.path.normpath(os.path.join(ROOT, source))
+        manifest_candidates = [
+            os.path.join(target, ".claude-plugin", "plugin.json"),
+            os.path.join(target, "hooks", ".claude-plugin", "plugin.json"),
+        ]
+        plugin_json = next((candidate for candidate in manifest_candidates
+                            if os.path.isfile(candidate)), None)
+        if plugin_json is None:
+            fail("marketplace.json: %r source has no .claude-plugin/plugin.json manifest" % name)
+            continue
+        try:
+            with open(plugin_json, encoding="utf-8") as handle:
+                manifest = json.load(handle)
+        except (OSError, json.JSONDecodeError) as exc:
+            fail("%s: %s" % (os.path.relpath(plugin_json, ROOT), exc))
+            continue
+        if manifest.get("name") != name:
+            fail("marketplace/plugin.json name mismatch for %r: %r vs %r"
+                 % (name, name, manifest.get("name")))
+        if manifest.get("version") != entry.get("version"):
+            fail("marketplace/plugin.json version mismatch for %s: %r vs %r"
+                 % (name, entry.get("version"), manifest.get("version")))
 
 
 def scan_preexisting_warnings():

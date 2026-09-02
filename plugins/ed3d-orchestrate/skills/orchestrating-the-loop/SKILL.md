@@ -107,18 +107,20 @@ Site requirement: the Phase 4 `task-implementor-fast` dispatch is pinned-first w
 
 <!-- DISPATCH-PROTOCOL:END -->
 
-## Context Handoff Gate (stop after plan review)
+## Context Handoff Gate (operator approval checkpoint after plan review)
 
 Subagents run in isolated context windows, but **your** context accumulates every scout report, review, and builder response — the transparency rules require printing them all. Research and planning are the context-heavy phases; execution and review pile on more.
 
-**Mandatory:** when the plan-review gate passes, before dispatching ANY builder:
+This gate is an **operator approval checkpoint**, not merely a context-management suggestion. It is **prompt-only guidance** — the mechanism implemented in this workflow's text — not **native Copilot runtime enforcement** (Copilot has no native facet-transition approval primitive for this boundary, so that enforcement is unavailable) and not **repository hook/script enforcement** (that mechanical backstop is deferred until a native builder-dispatch payload and identity are evidenced). A clean plan-review result does not by itself authorize execution: the plan-review pass is followed by this explicit approval checkpoint before any builder dispatch.
+
+**Mandatory:** when the plan-review gate passes, the workflow stops at this approval checkpoint. Before dispatching ANY builder:
 
 1. Verify the git baseline again. If no valid `HEAD` commit exists, create an initial commit now before proceeding.
 2. Record `base_sha` in the state file from the current `HEAD` commit, then update the state file: `phase: "execute"` and `plan_path` set to the plan document's absolute path.
-3. **End your turn** and present to the operator:
+3. **End your turn** and present the operator approval checkpoint:
    - the plan-review verdict, in one or two lines, and
-   - the choice: reply **continue** to start the builders in this context, or run `/clear` and then `/ed3d-orchestrate:orchestrate resume` to continue with a fresh context.
-4. Do not dispatch builders in the same turn in which the gate passed. This stop is safe: the guardrail hook only blocks stops while the review loop is active, which it is not yet.
+   - the two approval paths: reply **continue** to approve and start the builders in this context, or run `/clear` and then `/ed3d-orchestrate:orchestrate resume` to approve and continue with a fresh context.
+4. Do not dispatch builders in the same turn in which the gate passed. Builder dispatch begins only after the operator's approval response (either `continue` or the `/clear` + resume) has been processed. This stop is safe: the guardrail hook only blocks stops while the review loop is active, which it is not yet.
 
 On resume, the loop reads the state file (`phase: "execute"`) and the plan document at `plan_path` and starts Phase 4 directly. Completed phases are never repeated; nothing is lost to `/clear` — the plan, the commits, and the state file all live on disk.
 

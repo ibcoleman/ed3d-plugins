@@ -1,0 +1,20 @@
+{
+    "name": "ed3d-hook-jj-git-safety",
+    "description": "GitHub Copilot CLI-only preToolUse hook and Agent Skill for protecting jj + Git repositories from unsafe mutations, force pushes, and jj metadata pollution. POSIX/WSL only; explicit deployment required.",
+    "version": "1.1.0",
+    "author": {
+        "name": "Ed",
+        "email": "ed@ed3d.net"
+    },
+    "homepage": "https://github.com/ed3dai/ed3d-plugins",
+    "repository": "https://github.com/ed3dai/ed3d-plugins",
+    "license": "UNLICENSED",
+    "keywords": [
+        "hooks",
+        "security",
+        "jj",
+        "jujutsu",
+        "version-control",
+        "copilot-only"
+    ]
+}

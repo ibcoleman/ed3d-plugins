@@ -1,8 +1,8 @@
 {
     "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
     "name": "ed3d-plugins",
-    "version": "2.0.0",
-    "description": "Unified marketplace for ed3d's Claude Code development toolkit",
+    "version": "2.2.0",
+    "description": "Unified catalog for ed3d's development toolkit, targeting GitHub Copilot CLI; Claude Code plugins are frozen legacy.",
     "owner": {
         "name": "Ed",
         "email": "ed@ed3d.net"
@@ -81,7 +81,7 @@
         {
             "name": "ed3d-hook-skill-reinforcement",
             "description": "EXPERIMENTAL. A UserPromptSubmit hook that directs the model to consider and activate useful skills.",
-            "version": "1.1.0",
+            "version": "1.0.1",
             "source": "./plugins/ed3d-hook-skill-reinforcement",
             "author": {
                 "name": "Ed",
@@ -141,6 +141,43 @@
                 "testing",
                 "e2e",
                 "web-scraping"
+            ]
+        },
+        {
+            "name": "ed3d-hook-jj-git-safety",
+            "description": "GitHub Copilot CLI-only preToolUse hook and Agent Skill for protecting jj + Git repositories from unsafe mutations, force pushes, and jj metadata pollution. POSIX/WSL only; explicit deployment required.",
+            "version": "1.1.0",
+            "source": "./plugins/ed3d-hook-jj-git-safety",
+            "author": {
+                "name": "Ed",
+                "email": "ed@ed3d.net"
+            },
+            "license": "UNLICENSED",
+            "keywords": [
+                "hooks",
+                "security",
+                "jj",
+                "jujutsu",
+                "version-control",
+                "copilot-only"
+            ]
+        },
+        {
+            "name": "ed3d-completion-summary",
+            "description": "GitHub Copilot CLI-only sessionStart reminder hook and Agent Skill for preparing concise executive handoffs when substantial work items complete. POSIX/WSL only; explicit deployment required.",
+            "version": "0.1.0",
+            "source": "./plugins/ed3d-completion-summary",
+            "author": {
+                "name": "Ed",
+                "email": "ed@ed3d.net"
+            },
+            "license": "UNLICENSED",
+            "keywords": [
+                "skills",
+                "hooks",
+                "workflow",
+                "summary",
+                "copilot-only"
             ]
         },
         {
