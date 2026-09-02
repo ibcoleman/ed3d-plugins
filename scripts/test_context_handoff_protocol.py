@@ -67,6 +67,15 @@ def test_approval_wording_precedes_first_builder_dispatch_in_skill():
     assert approval_idx < fanout_idx, "approval checkpoint must precede builder dispatch"
     # The `continue` approval path must appear before the first dispatch too.
     assert body.index("reply **continue**") < fanout_idx
+    # The `/clear` + resume approval path must lie after the gate heading and
+    # before the first builder-dispatch instruction as well.
+    clear_resume_idx = body.index(
+        "`/clear` and then `/ed3d-orchestrate:orchestrate resume` to approve"
+    )
+    assert approval_idx < clear_resume_idx < fanout_idx, (
+        "the `/clear` + resume approval phrase must lie after the gate heading "
+        "and before the first builder dispatch"
+    )
 
 
 def test_command_uses_consistent_approval_terminology():
@@ -83,7 +92,7 @@ def test_existing_state_fields_remain_and_no_gate_pending_contract():
     for field in ('"plan_path"', '"base_sha"', '"head_sha"', '"phase"', '"review"'):
         assert field in body, f"missing documented state field {field}"
     # The gate must reference the existing fields, not a speculative gate flag.
-    assert '"phase: "execute"' in body or 'phase: "execute"' in body
+    assert 'phase: "execute"' in body
     assert "gate_pending" not in body, "speculative gate_pending hook contract introduced"
     command_body = text(COMMAND)
     assert "gate_pending" not in command_body

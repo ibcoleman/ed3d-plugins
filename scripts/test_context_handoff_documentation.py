@@ -58,15 +58,19 @@ def test_prompt_only_slice_does_not_claim_runtime_enforcement():
     # No doc may claim native runtime enforcement or a newly registered hook.
     # The full native/prompt/hook classification lives in the skill and README;
     # the command only needs to avoid claiming enforcement.
-    for path in (SKILL, README):
-        body = text(path)
-        assert "gate_pending" not in body
-        assert "native Copilot runtime enforcement" in body and "not" in body
+    skill = text(SKILL)
+    readme = text(README)
+    assert "gate_pending" not in skill and "gate_pending" not in readme
+    # The skill disclaims native runtime enforcement in its exact words.
+    assert "not **native Copilot runtime enforcement**" in skill
+    assert "enforcement is unavailable" in skill
+    # The README disclaims native runtime enforcement in its exact words.
+    assert "there is no native Copilot runtime enforcement for it" in readme
+    assert "no repository hook/script backstop" in readme
     command_body = text(COMMAND)
     assert "gate_pending" not in command_body
     assert "enforcement" not in command_body
     # The README explicitly marks the checkpoint as not enforced by the harness.
-    readme = text(README)
     assert "prompt-only guidance" in readme
     assert "there is no native Copilot runtime enforcement for it" in readme
     assert "no repository hook/script backstop" in readme
