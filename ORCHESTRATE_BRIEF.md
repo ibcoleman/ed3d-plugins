@@ -6,8 +6,8 @@ Restore deliberate model selection for accounts that can select models, while ke
 
 ## Current behavior and evidence
 
-- Copilot-native agent frontmatter and orchestrate dispatch prose currently omit both `model` and `reasoning_effort` so Auto-only accounts do not fail before a subagent starts.
-- Paid/model-selectable accounts therefore lose the intended reviewer/worker model separation.
+- Copilot-native agent frontmatter remains model-free for Auto compatibility, while orchestrate dispatch prose pins preferred models for model-selectable accounts.
+- Direct agent launches outside orchestrate still inherit account/CLI defaults; the repository has no runtime wrapper that can intercept those launches.
 - Observed Auto-only failure: `Reasoning effort 'medium' is not supported for model 'claude-haiku-4.5'`.
 - Observed delegation failure: `skill(ed3d-plan-and-execute:task-implementor-fast): Skill not found: ed3d-plan-and-execute:task-implementor-fast`; the named resource is an agent (`*.agent.md`), not a skill.
 - Auto may provision inexpensive models such as `gpt-5-mini` or `claude-haiku-4.6-mini`; that behavior is acceptable when explicit dispatch is unavailable.
@@ -15,13 +15,13 @@ Restore deliberate model selection for accounts that can select models, while ke
 ## Desired behavior
 
 1. For a model-selectable account, attempt the role's preferred dispatch parameters:
-   - adversary and plan-reviewer: `kimi-k3` with high effort, where supported;
-   - builders and fixers: the intended worker model with medium effort, where supported;
-   - scouts: the intended inexpensive worker model with low effort, where supported.
+   - adversary: `gpt-5.6-sol` with medium effort, where supported;
+   - plan-reviewer, builders, and fixers: `gpt-5.6-luna` with high effort, where supported;
+   - scouts and other roles: `gpt-5.6-luna` with high effort, where supported.
 2. If Copilot rejects the dispatch because the account is Auto-only, the model is unavailable, or the effort/model combination is unsupported, retry the same dispatch once with **both** `model` and `reasoning_effort` omitted.
 3. The fallback must use the same agent, task prompt, files, and role; only dispatch overrides change.
 4. Make fallback visible in the orchestrator's report/state or otherwise unambiguous: distinguish preferred-model success from Auto fallback.
-5. Never put model pins back into Copilot-native `*.agent.md` frontmatter. Direct agent launches must remain Auto-compatible.
+5. Never put model pins back into Copilot-native `*.agent.md` frontmatter. Direct agent launches must remain Auto-compatible and are outside the orchestrate pinning boundary.
 6. Keep Claude-native `.md` files unchanged.
 7. Preserve the existing state protocol, nonce handling, write-guard, resume behavior, and safety-cap semantics.
 8. Every delegated `*.agent.md` resource must be invoked through Copilot's native agent/subagent mechanism, never the Skill loader.

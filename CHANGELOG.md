@@ -1,5 +1,13 @@
 # Changelog
 
+## [ed3d-orchestrate] [0.4.2]
+
+Updates the preferred Copilot dispatch models for the expanded model catalog.
+
+**Changed:**
+- The adversary now prefers `gpt-5.6-sol` with medium effort.
+- Plan reviewers, builders, fixers, scouts, and other orchestrated roles now prefer `gpt-5.6-luna` with high effort.
+- Documents clarify that direct agent launches outside orchestrate inherit account/CLI defaults because Copilot-native agent twins remain model-free.
 ## [ed3d-completion-summary] [0.1.0]
 
 Copilot CLI-only package for end-of-work executive handoffs, and the repository designation as Copilot-targeted.
