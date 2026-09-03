@@ -1,0 +1,7 @@
+{"seq":1,"type":"gate.approval","payload":{"approval":"granted","path":"continue"}}
+{"seq":2,"type":"builder.task","payload":{"task":1,"tool":"task","toolCallId":"call_m1"}}
+{"seq":3,"type":"subagent.started","payload":{"agentName":"ed3d-builder","toolCallId":"call_m1","model":"gpt-5.5"}}
+{"seq":4,"type":"subagent.completed","payload":{"agentName":"ed3d-builder","toolCallId":"call_m1","totalTokens":7000}}
+{"seq":5,"type":"builder.task","payload":{"task":2,"tool":"task","toolCallId":"call_m2"}}
+{"seq":6,"type":"subagent.started","payload":{"agentName":"ed3d-builder","toolCallId":"call_m2","model":"gpt-5.5"}}
+{"seq":7,"type":"subagent.completed","payload":{"agentName":"ed3d-builder","toolCallId":"call_m2","totalTokens":9500}}
