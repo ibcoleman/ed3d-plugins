@@ -15,7 +15,7 @@ Restore deliberate model selection for accounts that can select models, while ke
 ## Desired behavior
 
 1. For a model-selectable account, attempt the role's preferred dispatch parameters:
-   - adversary: `gpt-5.6-sol` with medium effort, where supported;
+   - adversary: `gpt-6-astra` with medium effort, where supported;
    - plan-reviewer, builders, and fixers: `gpt-5.6-luna` with high effort, where supported;
    - scouts and other roles: `gpt-5.6-luna` with high effort, where supported.
 2. If Copilot rejects the dispatch because the account is Auto-only, the model is unavailable, or the effort/model combination is unsupported, retry the same dispatch once with **both** `model` and `reasoning_effort` omitted.

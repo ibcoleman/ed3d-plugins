@@ -1,7 +1,7 @@
 {
     "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
     "name": "ed3d-plugins",
-    "version": "2.2.0",
+    "version": "2.2.1",
     "description": "Unified catalog for ed3d's development toolkit, targeting GitHub Copilot CLI; Claude Code plugins are frozen legacy.",
     "owner": {
         "name": "Ed",

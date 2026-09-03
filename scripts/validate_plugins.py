@@ -115,7 +115,7 @@ POLICY_TARGETS = {
         "Use this checklist and do not skip the re-read", "consecutive_blocks: 0", "both are valid commits in the current git repository",
         "verify the terminal state", "Whenever a review arms — including re-arming an existing inactive review block",
         "refresh `head_sha` in the state file to the new full 40-character", 'and `verdict` to `"PENDING"` in the same state-file write',
-        DISPATCH_BEGIN, DISPATCH_END, "adversary` dispatch", "task-bug-fixer", "gpt-5.6-sol", "gpt-5.6-luna", "reasoning_effort=", "pre-start rejection",
+        DISPATCH_BEGIN, DISPATCH_END, "adversary` dispatch", "task-bug-fixer", "gpt-6-astra", "gpt-5.6-luna", "reasoning_effort=", "pre-start rejection",
         "rate-limit", "protocol-failure", "ambiguous", "full response",
     ],
     "plugins/ed3d-orchestrate/skills/orchestrating-the-loop/SKILL.md": [
@@ -347,15 +347,15 @@ def check_dispatch_protocol():
         if path in sections:
             bounded = sections[path]
             outside = body.replace(DISPATCH_BEGIN + bounded + DISPATCH_END, "")
-            for literal in ("gpt-5.6-sol", "gpt-5.6-luna"):
+            for literal in ("gpt-5.6-sol", "gpt-6-astra", "gpt-5.6-luna"):
                 if literal in outside:
                     fail("%s: preferred literal outside bounded dispatch section %r" % (path, literal))
         else:
-            for literal in ("gpt-5.6-sol", "gpt-5.6-luna"):
+            for literal in ("gpt-5.6-sol", "gpt-6-astra", "gpt-5.6-luna"):
                 if literal in body:
                     fail("%s: preferred literal outside dispatch skill %r" % (path, literal))
     required = {
-        SKILL_PATHS[0]: ("gpt-5.6-sol", "medium", "adversary` dispatch", "task-bug-fixer", "gpt-5.6-luna", "high"),
+        SKILL_PATHS[0]: ("gpt-6-astra", "medium", "adversary` dispatch", "task-bug-fixer", "gpt-5.6-luna", "high"),
         SKILL_PATHS[1]: ("gpt-5.6-luna", "high", "plan-reviewer", "gpt-5.6-luna", "high", "task-implementor-fast"),
         SKILL_PATHS[2]: ("gpt-5.6-luna", "high", "scouts use pinned-first"),
     }
@@ -388,7 +388,7 @@ def check_dispatch_protocol():
     # such as ``critical/high`` from satisfying an effort-only substring test.
     site_override_pairs = {
         SKILL_PATHS[0]: (
-            ("adversary` dispatch", 'model="gpt-5.6-sol"', 'reasoning_effort="medium"'),
+            ("adversary` dispatch", 'model="gpt-6-astra"', 'reasoning_effort="medium"'),
             ("task-bug-fixer", 'model="gpt-5.6-luna"', 'reasoning_effort="high"'),
         ),
         SKILL_PATHS[1]: (

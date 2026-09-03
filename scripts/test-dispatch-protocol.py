@@ -60,18 +60,19 @@ def test_preferred_attempt_is_bounded_and_role_specific():
     adversary = section(SKILLS["adversarial"])
     loop = section(SKILLS["loop"])
     scouts = section(SKILLS["scouts"])
-    assert 'adversary` dispatch' in adversary and 'gpt-5.6-sol` / `medium' in adversary
+    assert 'adversary` dispatch' in adversary and 'gpt-6-astra` / `medium' in adversary
+    assert "gpt-5.6-sol" not in all_skills()
     assert "task-bug-fixer" in adversary and 'gpt-5.6-luna` and effort `high' in adversary
     assert "plan-reviewer" in loop and 'gpt-5.6-luna` and effort `high' in loop
     assert "task-implementor-fast" in loop and 'gpt-5.6-luna` and effort `high' in loop
     assert "scouts use pinned-first `gpt-5.6-luna` / `high`" in scouts
     expected_pairs = (
-        ('model="gpt-5.6-sol"', 'reasoning_effort="medium"'),
+        ('model="gpt-6-astra"', 'reasoning_effort="medium"'),
         ('model="gpt-5.6-luna"', 'reasoning_effort="high"'),
     )
     for body in (adversary, loop, scouts):
         assert any(model in line and effort in line for line in body.splitlines() for model, effort in expected_pairs)
-    assert any('adversary` dispatch' in line and 'model="gpt-5.6-sol"' in line and 'reasoning_effort="medium"' in line for line in adversary.splitlines())
+    assert any('adversary` dispatch' in line and 'model="gpt-6-astra"' in line and 'reasoning_effort="medium"' in line for line in adversary.splitlines())
     assert any("task-bug-fixer" in line and 'model="gpt-5.6-luna"' in line and 'reasoning_effort="high"' in line for line in adversary.splitlines())
     assert any("plan-reviewer" in line and 'model="gpt-5.6-luna"' in line and 'reasoning_effort="high"' in line for line in loop.splitlines())
     assert any("task-implementor-fast" in line and 'model="gpt-5.6-luna"' in line and 'reasoning_effort="high"' in line for line in loop.splitlines())
@@ -131,10 +132,10 @@ def test_preferred_literals_are_scoped_to_protocol_sections():
         if path in SKILLS.values():
             bounded = section(path)
             outside = body.replace(BEGIN + bounded + END, "")
-            for literal in ("gpt-5.6-sol", "gpt-5.6-luna"):
+            for literal in ("gpt-5.6-sol", "gpt-6-astra", "gpt-5.6-luna"):
                 assert literal not in outside, f"{path}: unbounded {literal}"
         else:
-            assert "gpt-5.6-sol" not in body and "gpt-5.6-luna" not in body
+            assert all(literal not in body for literal in ("gpt-5.6-sol", "gpt-6-astra", "gpt-5.6-luna"))
     # Bare severity words and severity labels are not effort overrides.
     assert "critical/high" in text(SKILLS["adversarial"])
     assert "medium/low" in text(SKILLS["adversarial"])
@@ -195,18 +196,23 @@ def test_version_readme_roadmap_sync():
     manifest = json.loads(text(ROOT / "plugins/ed3d-orchestrate/.claude-plugin/plugin.json"))
     marketplace = json.loads(text(ROOT / ".claude-plugin/marketplace.json"))
     entry = next(item for item in marketplace["plugins"] if item["name"] == "ed3d-orchestrate")
-    assert manifest["version"] == entry["version"] == "0.5.0"
+    assert manifest["version"] == entry["version"] == "0.4.1"
     changelog = text(ROOT / "CHANGELOG.md")
-    assert "## [ed3d-orchestrate] [0.4.2]" in changelog  # historical entry
-    assert "## [ed3d-orchestrate] [0.5.0]" in changelog  # current entry
+    assert "## [ed3d-orchestrate] [0.4.1]" in changelog
     readme = text(ROOT / "plugins/ed3d-orchestrate/README.md")
     assert "pinned-first" in readme and "best-effort hard-coded" in readme
     assert "transcript/report-only" in readme and "does not survive `/clear` or resume" in readme
     assert "claude-haiku-4.5" in readme and "unknown dispatch-error semantics" in readme
     roadmap = text(ROOT / "ROADMAP.md")
-    assert "catalog verification remains dormant" in roadmap
-    assert "future catalog/API/operator verification event" in roadmap
-    assert "prose pins" in roadmap
+    assert "2026-09-08" in roadmap and "gpt-6-astra" in roadmap
+    for path in (
+        ROOT / "README.md",
+        ROOT / "plugins/ed3d-orchestrate/README.md",
+        ROOT / "ORCHESTRATE_BRIEF.md",
+    ):
+        body = text(path)
+        assert "gpt-6-astra" in body, f"{path}: missing Astra preference"
+        assert "gpt-5.6-sol" not in body, f"{path}: stale Sol preference"
 
 
 TESTS = [name for name in globals() if name.startswith("test_")]
