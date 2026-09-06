@@ -8,6 +8,9 @@ set from that revision to the current checkout (tracked changes plus untracked
 files) and enforces the approved 0.5.0 release allowlist:
 
   - the ed3d-orchestrate implementation docs (SKILL.md, orchestrate.md, README.md),
+  - the current-main reconciliation paths for the dispatch policy
+    (ORCHESTRATE_BRIEF.md, the adversarial-review and scout-sweep SKILL.md files,
+    and scripts/validate_plugins.py),
   - the orchestrate/context-handoff contract test suites under scripts/,
   - the replay fixtures under scripts/fixtures/orchestrate-events/,
   - the Branch B evidence artifact (docs/research/*.evidence.md),
@@ -34,6 +37,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 # Approved 0.5.0 release: exact changed paths that are permitted.
 ALLOWED_PATHS = frozenset({
+    # Current-main reconciliation paths (ed3d-orchestrate dispatch policy).
+    "ORCHESTRATE_BRIEF.md",
+    "plugins/ed3d-orchestrate/skills/adversarial-review/SKILL.md",
+    "plugins/ed3d-orchestrate/skills/scout-sweep/SKILL.md",
+    "scripts/validate_plugins.py",
     # ed3d-orchestrate implementation docs.
     "plugins/ed3d-orchestrate/skills/orchestrating-the-loop/SKILL.md",
     "plugins/ed3d-orchestrate/commands/orchestrate.md",

@@ -13,6 +13,15 @@ Migration/release documentation and the enforcement-branch decision: the plan-re
 - `ed3d-plan-and-execute` user-facing planning commands are labeled deprecated/frozen; its builder/fixer agents `task-implementor-fast` and `task-bug-fixer` remain a live dependency of `ed3d-orchestrate` (Phase 4 builder fanout and the review-fix loop). `code-reviewer` and `test-analyst` are **not** `ed3d-orchestrate` runtime dependencies — they remain for frozen legacy package/validator compatibility (the frozen package's own planning/execution workflow still dispatches them, and the repository validator's expected-twins set includes them), not orchestrate dispatch.
 - Getting-started snapshot synced; `ed3d-orchestrate` manifest and marketplace entry bumped to 0.5.0; ROADMAP updated. Legacy `ed3d-plan-and-execute` 1.12.1 and catalog version 2.2.0 unchanged.
 
+## [ed3d-orchestrate] [0.4.2]
+
+Updates the preferred Copilot dispatch models for the expanded model catalog.
+
+**Changed:**
+- The adversary now prefers `gpt-5.6-sol` with medium effort.
+- Plan reviewers, builders, fixers, scouts, and other orchestrated roles now prefer `gpt-5.6-luna` with high effort.
+- Documents clarify that direct agent launches outside orchestrate inherit account/CLI defaults because Copilot-native agent twins remain model-free.
+
 ## [ed3d-completion-summary] [0.1.0]
 
 Copilot CLI-only package for end-of-work executive handoffs, and the repository designation as Copilot-targeted.
