@@ -92,7 +92,7 @@ ed3d-plugins/
 
 This repository is Copilot-targeted. Copilot CLI reads the repo-root [`AGENTS.md`](AGENTS.md) as its primary instructions, so those are the canonical agent instructions and conventions. The plugins and packages here load under GitHub Copilot CLI:
 
-- Every role agent ships a Copilot-native `<name>.agent.md` twin beside its Claude Code `<name>.md` definition — same body and strict-quoted frontmatter. Twins are model-free; model-family separation is applied at dispatch time via pinned-first attempts with Auto fallback. The Claude Code files are untouched.
+- Every role agent ships a Copilot-native `<name>.agent.md` twin beside its Claude Code `<name>.md` definition — same body and strict-quoted frontmatter. Twins are model-free; orchestrated model selection is applied at dispatch time via pinned-first attempts with Auto fallback (`gpt-5.6-sol` / medium for the adversary, `gpt-5.6-luna` / high for everything else). Direct agent launches outside that dispatch path inherit the account/CLI default unless configured through Copilot's `/subagents` command. The Claude Code files are untouched.
 - `ed3d-orchestrate` is a Copilot-first plugin implementing the full orchestration loop (scout sweep → plan → plan review → builders → adversarial review rounds) with an `agentStop` guardrail hook. It installs under Claude Code too, but its workflow targets Copilot sessions. Model bindings are pinned by the plugin's skills on every dispatch — no extra configuration required.
 - `ed3d-hook-jj-git-safety` is a Copilot CLI-only package. It is cataloged here for distribution and versioning, but it is not a Claude Code plugin; deploy its hook and skill using the package README's Copilot instructions.
 

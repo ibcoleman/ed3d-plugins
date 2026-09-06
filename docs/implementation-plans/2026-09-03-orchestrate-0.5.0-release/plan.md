@@ -100,8 +100,15 @@ modified.
   `docs/research/2026-09-03-orchestrate-enforcement-branch-b.evidence.md`.
 - **Scope contract:** `python3 scripts/test_context_handoff_scope.py <base-revision>`
   rejects any change outside the approved 0.5.0 release allowlist and any
-  protected path (`hooks.json`, both hook scripts, facets/transclusion). Plan
-  artifacts under `docs/implementation-plans/` are an allowed family.
+  protected path (`hooks.json`, both hook scripts, facets/transclusion). The
+  allowlist explicitly includes the current-main reconciliation paths
+  (`ORCHESTRATE_BRIEF.md`,
+  `plugins/ed3d-orchestrate/skills/adversarial-review/SKILL.md`,
+  `plugins/ed3d-orchestrate/skills/scout-sweep/SKILL.md`,
+  `scripts/validate_plugins.py`) alongside the implementation docs, the
+  contract test suites, the replay fixtures, the evidence artifact, and the
+  version/manifest/docs/state files. Plan artifacts under
+  `docs/implementation-plans/` are an allowed family.
 - **Regression:** `python3 scripts/test-dispatch-protocol.py`,
   `python3 scripts/validate_plugins.py`, and the two hook suites remain green.
 - **AC mapping:** AC.1→`test_orchestrate_agent_dependencies.py`; AC.2→inspection;
