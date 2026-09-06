@@ -2,7 +2,15 @@
 
 Durable context for humans and agents picking this work up after a break. Each entry says what it is, why it matters, and the concrete next action. Update this file when items land or new ones emerge — it is the project's memory.
 
-Last updated: 2026-09-01
+Last updated: 2026-09-03
+
+## Landed: ed3d-orchestrate 0.5.0 — Enforcement Branch B (protocol-only) (2026-09-03)
+
+- **Decision:** the plan-review → builder handoff gate ships as **protocol-only** (Branch B). A mechanical builder-gate slice (Branch A) is rejected until a native builder-dispatch payload and identity are validated and evidenced.
+- **Evidence:** checked-in artifact `docs/research/2026-09-03-orchestrate-enforcement-branch-b.evidence.md` documents the **Copilot CLI 1.0.82 validation limitation** — no captured builder-dispatch fixture, and the hook reference does not specify an agent/resource identity in the pre-tool payload, so a mechanical matcher cannot be built safely. No builder-gate hook artifact, no builder-gate hook registration, and no mechanical claims.
+- **Contract test:** `python3 scripts/test_orchestrate_enforcement_branch.py` asserts exactly Branch B: evidence says protocol-only; no builder-gate artifact/registration; no mechanical claims. `hooks.json` and the two existing hook scripts (`check-review-loop.py`, `adversary-write-guard.py`) are unchanged.
+- **Docs:** root README adds a Migration & release notes section; `ed3d-plan-and-execute` user-facing planning commands are labeled deprecated/frozen while its builder/fixer agents `task-implementor-fast` and `task-bug-fixer` remain a live dependency of `ed3d-orchestrate` (code-reviewer/test-analyst are not orchestrate runtime dependencies — they remain for frozen legacy package/validator compatibility); getting-started snapshot synced; version bumped to 0.5.0 in the plugin manifest and marketplace with a top changelog entry (legacy plan-and-execute 1.12.1 and catalog 2.2.0 unchanged).
+- **Residual:** the mechanical-gate follow-up stays deferred pending native builder-dispatch evidence on a current Copilot CLI; re-verify after future CLI upgrades.
 
 ## Decision: repository is Copilot-targeted; Claude Code abandoned (2026-08-31)
 
@@ -90,7 +98,7 @@ The multi-round review arc validated live end to end on toyapp (Copilot CLI 1.0.
 ## Deferred follow-ups (ed3d-orchestrate)
 
 - **`ed3d-hook-jj-git-safety` SKILL.md carries `user-invocable: false`, which is not a documented Copilot skill frontmatter key** (documented Copilot skill keys: `name`, `description`, `license`, `allowed-tools`; description is hard-capped at 1024 chars with silent drop). Next action: drop the key in a maintenance pass and re-verify skill discovery.
-- **Hard-enforced context gate.** A `preToolUse` hook variant that blocks the first builder dispatch while a `gate_pending` flag is set in `.ed3d/orchestrate-state.json`. Build only if the prose gate (0.2.1) proves skippable in practice. Next action: watch one real run; if the gate gets blown through, build this.
+- **Hard-enforced context gate — resolved by Branch B (0.5.0, 2026-09-03).** The mechanical variant (Branch A: a `preToolUse` hook that blocks the first builder dispatch while a `gate_pending` flag is set) is **rejected** until a native builder-dispatch payload and identity are validated and evidenced (Copilot CLI 1.0.82 validation limitation — see `docs/research/2026-09-03-orchestrate-enforcement-branch-b.evidence.md`). The prose gate (0.2.1, strengthened 2026-09-01) remains the enforcement layer, shipped protocol-only and pinned by `scripts/test_orchestrate_enforcement_branch.py`. Next action: record the first future event that confirms a native builder-dispatch payload/identity, then re-open Branch A against it.
 - **Upstream PR to `ed3dai/ed3d-plugins`.** Agent twins + `ed3d-orchestrate`. PR text lives at `~/Projects/project-orpheus/copilot-fixes/PR_DESCRIPTION.md` but covers through 0.1.0 only. Next action: refresh it (pinned dispatch models 0.1.1, handoff/resume 0.2.0, mandatory gate 0.2.1, review-loop hardening 0.3.0–0.3.3) before opening.
 - **Model-id verification — superseded by 0.3.4; dormant under 0.4.0.** catalog verification remains dormant: no future catalog/API/operator verification event has occurred. This plan's prose pins, validator needles, and release do not count as verification. Reactivate catalog verification only after a future event confirms that explicit model selection is available again; next action is to record that event and re-check `kimi-k3`/`gpt-5.6-luna` against it before changing the dispatch policy.
 - **`settings.json` subagents schema discrepancy.** The Copilot config-dir reference documents `subagents.agents.<name>` (`model`/`effortLevel`/`contextTier`), but hand-edits on 1.0.80 produced fallback models and an unexpected `minimal` effort (dispatch-time params won). Prefer the `/subagents` picker. Next action: consider filing an upstream issue against `github/copilot-cli` with the evidence from the 2026-08-16 session.

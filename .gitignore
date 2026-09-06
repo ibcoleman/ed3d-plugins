@@ -1,1 +1,3 @@
 .polytoken/
+__pycache__/
+*.pyc

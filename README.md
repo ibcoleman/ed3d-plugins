@@ -11,6 +11,8 @@ The big stick in this repository is `ed3d-plan-and-execute`, which implements an
 ## Using `ed3d-plan-and-execute`
 More in [the README for the plugin](plugins/ed3d-plan-and-execute/README.md), and it's worth skimming, but here's a quickstart:
 
+> **Frozen legacy:** the user-facing planning commands below (`/start-design-plan`, `/start-implementation-plan`, `/execute-implementation-plan`, `/flesh-it-out`, `/how-to-customize`) are deprecated/frozen — new orchestration targets `ed3d-orchestrate`. This plugin's builder/fixer agents remain a live dependency of `ed3d-orchestrate` and stay maintained.
+
 ```
 Rough Idea
     │
@@ -31,7 +33,7 @@ Rough Idea
 | Plugin | Description |
 |--------|-------------|
 | **`ed3d-00-getting-started`** | Getting started guide and onboarding for ed3d-plugins. Run `/getting-started` to see this README. |
-| **`ed3d-plan-and-execute`** | Planning and execution workflows for Claude Code. Feed it a decent-sized task and it'll help you get it done in a sustainable and thought-through way |
+| **`ed3d-plan-and-execute`** | FROZEN LEGACY. Planning and execution workflows for Claude Code — user-facing planning commands deprecated/frozen; its builder/fixer agents remain a live dependency of `ed3d-orchestrate` |
 | **`ed3d-house-style`** | House style for software development; Very Opinionated |
 | **`ed3d-basic-agents`** | Core agents for general-purpose tasks (haiku, sonnet, opus). Other plugins expect this to exist |
 | **`ed3d-research-agents`** | Agents for research across multiple data sources (codebase, internet, combined); other plugins expect this to exist |
@@ -43,7 +45,7 @@ Rough Idea
 | **`ed3d-hook-jj-git-safety`** | Copilot-only. GitHub Copilot CLI-only preToolUse hook and Agent Skill that protect jj + Git repositories from unsafe mutations and jj metadata pollution; POSIX/WSL only |
 | **`ed3d-completion-summary`** | Copilot CLI-only. sessionStart reminder hook + work-completion-summary Agent Skill for end-of-work executive handoffs. Inactive by default; explicit deployment required |
 | **`ed3d-session-reflection`** | EXPERIMENTAL. Session awareness and conversation review tooling. Requires `ed3d-extending-claude` |
-| **`ed3d-orchestrate`** | EXPERIMENTAL. Polytoken-style orchestration loop for Copilot CLI: scout-sweep research, plan-review gate, builder fanout, adversarial review rounds with a stop-guardrail hook. Requires `ed3d-research-agents` + `ed3d-plan-and-execute` |
+| **`ed3d-orchestrate`** | EXPERIMENTAL. Polytoken-style orchestration loop for Copilot CLI: scout-sweep research, plan-review gate, builder fanout, adversarial review rounds with a stop-guardrail hook. 0.5.0 handoff gate is protocol-only (Branch B). Requires `ed3d-research-agents` + `ed3d-plan-and-execute` |
 
 ## Installation
 
@@ -95,6 +97,14 @@ This repository is Copilot-targeted. Copilot CLI reads the repo-root [`AGENTS.md
 - `ed3d-hook-jj-git-safety` is a Copilot CLI-only package. It is cataloged here for distribution and versioning, but it is not a Claude Code plugin; deploy its hook and skill using the package README's Copilot instructions.
 
 Run `python3 scripts/validate_plugins.py` (stdlib-only, zero dependencies) to check twin frontmatter, model bindings, dispatch-protocol rules, and marketplace integrity. Run `python3 scripts/test-dispatch-protocol.py` alongside the orchestrate hook suites for focused dispatch-protocol coverage.
+
+## Migration & release notes
+
+### ed3d-orchestrate 0.5.0 — Enforcement Branch B (protocol-only) — 2026-09-03
+
+The plan-review → builder handoff gate ships as **protocol-only** (Branch B). The checked-in evidence artifact [`docs/research/2026-09-03-orchestrate-enforcement-branch-b.evidence.md`](docs/research/2026-09-03-orchestrate-enforcement-branch-b.evidence.md) documents the **Copilot CLI 1.0.82 validation limitation** (no native builder-dispatch payload/identity validated, so a mechanical builder-gate hook cannot be built safely) and the protocol-only status: **no builder-gate hook artifact**, **no builder-gate hook registration**, and **no mechanical claims**. `python3 scripts/test_orchestrate_enforcement_branch.py` asserts exactly this Branch B contract. Branch A (a mechanical builder-gate artifact + registration) remains rejected until a native builder-dispatch payload and identity are validated and evidenced.
+
+In the same release, `ed3d-plan-and-execute`'s user-facing planning commands are labeled deprecated/frozen; its builder/fixer agents remain a live dependency of `ed3d-orchestrate`.
 
 ## Roadmap
 

@@ -1,0 +1,5 @@
+{"seq":1,"type":"gate.approval","payload":{"approval":"granted","path":"continue"}}
+{"seq":2,"type":"assistant.turn_start","payload":{"turn":1}}
+{"seq":3,"type":"assistant.turn_end","payload":{"turn":1}}
+{"seq":4,"type":"assistant.turn_start","payload":{"turn":2}}
+{"seq":5,"type":"builder.task","payload":{"task":1,"tool":"task","toolCallId":"call_pt1"}}

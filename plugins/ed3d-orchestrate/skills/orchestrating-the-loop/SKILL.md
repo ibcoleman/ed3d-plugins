@@ -21,6 +21,9 @@ At loop start, create `.ed3d/orchestrate-state.json` in the working directory of
   "base_sha": null,
   "head_sha": null,
   "phase": "research",
+  "gate": {
+    "approval": "pending"
+  },
   "review": {
     "active": false,
     "round": 0,
@@ -45,6 +48,8 @@ The review block's `history` field is the append-only round record:
 
 - Before Phase 1, verify the git baseline: the working directory must be inside a local git repository with at least one commit. If no git repo exists and the directory is empty or the task is to create a new project, run `git init`, create a minimal initial commit, and record its SHA as `base_sha`. If no git repo exists in a non-empty directory, ask before initializing. If a git repo exists but has no commits, create an initial commit before implementation. Do not enter Phase 4 without a valid `base_sha`.
 - Update `phase` at every phase transition: `research` → `plan` → `execute` → `review`.
+- **`gate.approval` — persisted operator-approval state for the plan-review→builder handoff.** It is one of `"pending"` (the plan-review gate has passed but execution is not yet authorized) or `"granted"` (the operator's explicit authorization has been processed and recorded). It is written to the state file, never implied — no builder dispatch may occur while `gate.approval` is not `"granted"` in the file. Set it to `"pending"` at loop start and whenever a fresh loop begins (a stale `"granted"` from a previous or completed loop, or from a different task, never carries forward). Set it to `"granted"` only in the same turn the operator's explicit `continue` or `/clear`+resume authorization is processed, and write it to the file immediately before the first builder dispatch of that turn. Never fabricate `"granted"` from an ambiguous, unprocessed, or unstated signal.
+- **Recovery — malformed / stale / partial writes fail closed.** The state file is the source of truth and its approval state defaults to `"pending"`. If the file is malformed (not valid JSON), stale (records an approval from a prior/completed loop or a different task), or partial (a write was interrupted mid-file), never treat `gate.approval` as `"granted"` — do not dispatch builders, report a verdict, or fabricate state. Rebuild the file to a known-safe baseline (`gate.approval: "pending"`) using only what is verifiable from the plan document and git, then present the checkpoint and require explicit authorization. A `"granted"` value is trustworthy only when written by this loop in this session and backed by the operator's authorization.
 - Record `base_sha` immediately before dispatching builders in Phase 4, and record `head_sha` immediately after all builder work is committed. Both must be valid commits in the current repo before Phase 5 starts.
 - The `adversarial-review` skill owns the review block during the dryer; when it activates the loop it sets `review.active: true`, `round: 1`. That skill also owns `history` appends — one entry per completed round (`critical_high` / `advisory` are the counts of findings at those severities in that round's report). Entries are append-only, never rewritten; an optional `note` string is the entry schema's only sanctioned extension point; create the array if it is absent (in-flight 0.2.x state files predate it). Rounds legitimately split across `/clear`+resume session boundaries, so per-session dispatch counts undercount the loop — `history` is the authoritative round count for the final report (the round count is the highest `round` value in `history`, not its length — a protocol-failure `PENDING` entry shares its round number).
 - Handle `consecutive_blocks` correctly in every rewrite: the guardrail hook (`check-review-loop.py`) increments it each time it blocks a stop; reset it to 0 whenever the loop makes progress (round advanced, verdict changed, or findings changed). Dropping the key weakens the hook's stop protection.
@@ -116,19 +121,33 @@ This gate is an **operator approval checkpoint**, not merely a context-managemen
 **Mandatory:** when the plan-review gate passes, the workflow stops at this approval checkpoint. Before dispatching ANY builder:
 
 1. Verify the git baseline again. If no valid `HEAD` commit exists, create an initial commit now before proceeding.
-2. Record `base_sha` in the state file from the current `HEAD` commit, then update the state file: `phase: "execute"` and `plan_path` set to the plan document's absolute path.
-3. **End your turn** and present the operator approval checkpoint:
+2. Record `base_sha` in the state file from the current `HEAD` commit, then update the state file: `phase: "execute"`, `plan_path` set to the plan document's absolute path, and `gate.approval: "pending"`. The approval write and the terminal turn land together — one state write records that the gate passed.
+3. **End your turn** — this is the **terminal plan-review turn**. The plan-review pass ends your turn with `gate.approval: "pending"` recorded; it does not roll into execution. Present the operator approval checkpoint:
    - the plan-review verdict, in one or two lines, and
    - the two approval paths: reply **continue** to approve and start the builders in this context, or run `/clear` and then `/ed3d-orchestrate:orchestrate resume` to approve and continue with a fresh context.
-4. Do not dispatch builders in the same turn in which the gate passed. Builder dispatch begins only after the operator's approval response (either `continue` or the `/clear` + resume) has been processed. This stop is safe: the guardrail hook only blocks stops while the review loop is active, which it is not yet.
+4. Do not dispatch builders in the same turn in which the gate passed — `gate.approval` is still `"pending"` in the state file. Builder dispatch begins only after the operator's approval response (`continue`, or `/clear` + resume followed by `continue`) has been processed, in a **later** turn. On authorization, write `gate.approval: "granted"` to the state file in that same turn, **immediately before** the first builder dispatch — the approval write always precedes the dispatch; never dispatch first. This stop is safe: the guardrail hook only blocks stops while the review loop is active, which it is not yet.
 
-On resume, the loop reads the state file (`phase: "execute"`) and the plan document at `plan_path` and starts Phase 4 directly. Completed phases are never repeated; nothing is lost to `/clear` — the plan, the commits, and the state file all live on disk.
+On resume, the loop reads the state file (`phase: "execute"`) and the plan document at `plan_path` and starts Phase 4 directly — but resuming alone does not grant approval. A **bare auto-resume is refused**: if the state file records `gate.approval: "pending"` (or the field is absent, malformed, or partial), resuming into `phase: "execute"` does not authorize builders. The loop re-presents the approval checkpoint and waits for the operator's explicit `continue` (the `/clear` + resume path likewise requires the explicit `continue` response to be processed before dispatch). Only an explicit authorization written as `gate.approval: "granted"` in the state file — in the same turn, immediately before the first dispatch — opens the door to builders. Completed phases are never repeated; nothing is lost to `/clear` — the plan, the commits, and the state file all live on disk.
+
+**Approval transition table** (`gate.approval` is read from the state file, never implied):
+
+| Where the loop is | `gate.approval` | Builder dispatch | Stop / action |
+|---|---|---|---|
+| Plan-review gate passes | written `"pending"` now | No | **Terminal plan-review turn** — end turn, present checkpoint |
+| Operator replies `continue` (same or fresh context) | write `"granted"` this turn, immediately before first dispatch | Yes | Record approval, then dispatch |
+| `/clear` + resume, operator replies `continue` | write `"granted"` this turn, immediately before first dispatch | Yes | Present checkpoint; explicit `continue` required |
+| Bare resume (no explicit authorization processed) | still `"pending"` | **No — refused** | Re-present checkpoint; wait for explicit `continue` |
+| Loop complete (SHIP / operator-accepted) | reset to `"pending"` on the next fresh loop | — | Leave final verdict in place |
+
+Every builder dispatch must be gated on a `"granted"` approval already written in the state file for the current loop and session. Never dispatch on a `"pending"`, a stale `"granted"`, or an unrecorded signal.
 
 The operator may also `/clear` + resume at any other phase boundary on their own initiative — the state file is current at every transition, so no cooperation from the loop is required.
 
 ## Phase 4: Execute
 
 If you are resuming into this phase (`phase: "execute"` in the state file), read the plan document at `plan_path` first, then continue from here. Before dispatching any builder, verify `base_sha` exists in the state file and is a valid commit in the current repo; if it is missing, set it from the current `HEAD` before any implementation changes.
+
+Before any builder dispatch, verify the state file records `gate.approval: "granted"` for this loop and session — written in the same turn as, and immediately before, the first dispatch after the operator's explicit authorization. Do not fan out while it is `"pending"`, stale, malformed, or partial; a bare resume does not grant approval.
 
 Fan out builders. One bounded task per dispatch — a builder gets a task it can complete fully with tests and a commit.
 

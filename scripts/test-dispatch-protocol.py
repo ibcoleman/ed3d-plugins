@@ -196,7 +196,7 @@ def test_version_readme_roadmap_sync():
     manifest = json.loads(text(ROOT / "plugins/ed3d-orchestrate/.claude-plugin/plugin.json"))
     marketplace = json.loads(text(ROOT / ".claude-plugin/marketplace.json"))
     entry = next(item for item in marketplace["plugins"] if item["name"] == "ed3d-orchestrate")
-    assert manifest["version"] == entry["version"] == "0.4.1"
+    assert manifest["version"] == entry["version"] == "0.5.0"
     changelog = text(ROOT / "CHANGELOG.md")
     assert "## [ed3d-orchestrate] [0.4.0]" in changelog
     readme = text(ROOT / "plugins/ed3d-orchestrate/README.md")

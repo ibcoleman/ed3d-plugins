@@ -1,5 +1,18 @@
 # Changelog
 
+## [ed3d-orchestrate] [0.5.0]
+
+Migration/release documentation and the enforcement-branch decision: the plan-review → builder handoff gate ships as **protocol-only** (Branch B). A mechanical builder-gate slice (Branch A) is rejected pending validated native builder-dispatch evidence.
+
+**New:**
+- Checked-in evidence artifact `docs/research/2026-09-03-orchestrate-enforcement-branch-b.evidence.md` documenting the Copilot CLI 1.0.82 validation limitation (no native builder-dispatch payload/identity validated) and the protocol-only status: no builder-gate hook artifact, no builder-gate registration, no mechanical claims.
+- `scripts/test_orchestrate_enforcement_branch.py` (offline, zero dependencies) asserting exactly the Branch B contract: evidence says protocol-only; no builder-gate artifact/registration; no mechanical claims.
+
+**Changed:**
+- Root README adds a Migration & release notes section for the Branch B decision.
+- `ed3d-plan-and-execute` user-facing planning commands are labeled deprecated/frozen; its builder/fixer agents `task-implementor-fast` and `task-bug-fixer` remain a live dependency of `ed3d-orchestrate` (Phase 4 builder fanout and the review-fix loop). `code-reviewer` and `test-analyst` are **not** `ed3d-orchestrate` runtime dependencies — they remain for frozen legacy package/validator compatibility (the frozen package's own planning/execution workflow still dispatches them, and the repository validator's expected-twins set includes them), not orchestrate dispatch.
+- Getting-started snapshot synced; `ed3d-orchestrate` manifest and marketplace entry bumped to 0.5.0; ROADMAP updated. Legacy `ed3d-plan-and-execute` 1.12.1 and catalog version 2.2.0 unchanged.
+
 ## [ed3d-completion-summary] [0.1.0]
 
 Copilot CLI-only package for end-of-work executive handoffs, and the repository designation as Copilot-targeted.

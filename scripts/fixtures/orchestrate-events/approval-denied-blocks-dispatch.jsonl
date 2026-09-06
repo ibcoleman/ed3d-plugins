@@ -1,0 +1,2 @@
+{"seq":1,"type":"gate.approval","payload":{"approval":"denied","path":"plan-review"}}
+{"seq":2,"type":"builder.task","payload":{"task":1,"tool":"task","toolCallId":"call_nd1"}}

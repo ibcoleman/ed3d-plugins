@@ -201,8 +201,8 @@
         },
         {
             "name": "ed3d-orchestrate",
-            "description": "EXPERIMENTAL. Polytoken-style orchestration loop for Copilot CLI: scout-sweep research fanout, plan-review gate, builder fanout, and adversarial tumble-dryer review rounds with an agentStop guardrail hook.",
-            "version": "0.4.1",
+            "description": "EXPERIMENTAL. Polytoken-style orchestration loop for Copilot CLI: scout-sweep research fanout, plan-review gate, builder fanout, and adversarial tumble-dryer review rounds with an agentStop guardrail hook. Handoff gate is protocol-only (Branch B).",
+            "version": "0.5.0",
             "source": "./plugins/ed3d-orchestrate",
             "author": {
                 "name": "Ed",

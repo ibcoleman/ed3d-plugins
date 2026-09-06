@@ -1,20 +1,32 @@
 #!/usr/bin/env python3
 """Deterministic event replay tests for the ed3d-orchestrate approval gate.
 
-Replays JSONL event streams (mirroring Copilot CLI's per-session events.jsonl)
-through the plan-review -> approval -> builder-dispatch protocol and verifies,
-purely at the protocol layer (a protocol-only seam; no runtime enforcement is
-claimed), that:
+Replays synthetic JSONL event streams through the plan-review -> approval ->
+builder-dispatch protocol and verifies, purely at the protocol layer (a
+protocol-only seam; no runtime enforcement is claimed), that:
 
   * every event is strictly schema-valid (exact payload key set, types, enums),
   * seq values are strictly increasing across the stream,
   * event types are recognized,
   * a persisted ``gate.approval == "granted"`` precedes every builder dispatch
     (``builder.task``) and every ``subagent.started``,
+  * a grant only authorizes the turn (or pre-turn context) it was written in:
+    a grant written before any ``assistant.turn_start`` cannot authorize a
+    later turn,
   * builder dispatches correlate to their started/completed subagents by
     ``toolCallId``,
   * the builder-dispatch tool name is flexible (alternate tool names such as
     ``Task`` are accepted; the protocol seam is the event type, not the tool).
+
+The ``type``/``payload`` shapes below are synthetic *seam* events: they are a
+minimal, hand-authored vocabulary designed to exercise the protocol layer in
+isolation. They are NOT raw Copilot CLI ``events.jsonl`` records, and this
+replayer does NOT claim to accept raw ``events.jsonl`` as-is. Real Copilot
+events must be adapted (mapped/reduced) onto this seam vocabulary before replay
+— e.g. a permissions prompt is represented as a ``gate.approval`` and a subagent
+dispatch as a ``builder.task``/``subagent.*`` pair keyed by ``toolCallId``.
+Treat fixture verdicts as protocol-layer only, not as evidence that any
+particular real event stream passes.
 
 Each fixture under scripts/fixtures/orchestrate-events/ is replayed and its
 verdict compared against the expected outcome encoded in EXPECTED. The script
@@ -72,6 +84,7 @@ _SCHEMAS = {
     "assistant.message": ({"role": str, "content": str}, {}),
     "session.model_change": ({"from": str, "to": str}, {}),
     "session.usage_checkpoint": ({"totalTokens": int}, {}),
+    "session.loop_reset": ({"loop": int}, {}),
     "skill.invoked": ({"skill": str}, {}),
     "permission.requested": ({"toolCallId": str}, {}),
     "permission.completed": ({"toolCallId": str}, {}),
@@ -142,6 +155,9 @@ class Replayer:
     def __init__(self):
         self.gate = "pending"  # persisted gate.approval
         self.path = ""
+        self.turn = None  # current assistant turn number (None if none seen)
+        self.grant_turn = None  # turn in which gate became granted (None if none)
+        self.grant_pre_turn = False  # grant written before any assistant.turn_start
         self._builders = {}  # toolCallId -> task number (dispatched, uncorrelated yet)
         self._started = set()  # toolCallIds with a subagent.started
 
@@ -154,6 +170,8 @@ class Replayer:
                 result.verdict = Verdict.MALFORMED
                 result.reason = f"event {idx + 1} (seq {event.get('seq')}): {err}"
                 result.events_processed = idx
+                result.gate = self.gate
+                result.path = self.path
                 return result
             prev_seq = event["seq"]
             result.events_processed = idx + 1
@@ -163,14 +181,31 @@ class Replayer:
                 self.gate = payload["approval"]
                 self.path = payload["path"]
                 if self.gate == "granted":
-                    result.notes.append(
-                        f"seq {event['seq']}: gate.approval granted (path={self.path!r})"
+                    self.grant_turn = self.turn
+                    self.grant_pre_turn = self.turn is None
+                    context = (
+                        "pre-turn (no assistant.turn_start yet)"
+                        if self.turn is None
+                        else f"turn {self.turn}"
                     )
+                    result.notes.append(
+                        f"seq {event['seq']}: gate.approval granted "
+                        f"(path={self.path!r}, {context})"
+                    )
+                else:
+                    self.grant_turn = None
+                    self.grant_pre_turn = False
             elif etype == "builder.task":
                 if self.gate != "granted":
                     result.violations.append(
                         f"seq {event['seq']}: builder.task (task {payload['task']}) "
                         f"dispatched while gate.approval={self.gate!r} (not granted)"
+                    )
+                elif self.grant_turn is not None and self.turn != self.grant_turn:
+                    result.violations.append(
+                        f"seq {event['seq']}: builder.task (task {payload['task']}) "
+                        f"dispatched in turn {self.turn} but grant was written in "
+                        f"turn {self.grant_turn} (stale/immediacy)"
                     )
                 else:
                     self._builders[payload["toolCallId"]] = payload["task"]
@@ -206,6 +241,59 @@ class Replayer:
                         f"seq {event['seq']}: subagent {payload['agentName']} "
                         f"(builder.task {task}) completed"
                     )
+            elif etype == "assistant.turn_start":
+                new_turn = payload["turn"]
+                # A grant only authorizes the turn it was written in. Two cases
+                # make a grant stale when a new turn starts:
+                #  * the grant was written pre-turn (before any turn marker):
+                #    entering the first turn establishes turn context the grant
+                #    was never part of, so it cannot authorize that turn;
+                #  * the grant was written in an earlier, different turn.
+                if self.gate == "granted" and self.grant_pre_turn:
+                    self.gate = "pending"
+                    self.grant_turn = None
+                    self.grant_pre_turn = False
+                    result.notes.append(
+                        f"seq {event['seq']}: turn {new_turn} invalidated "
+                        "pre-turn grant (no turn was active when written)"
+                    )
+                elif (
+                    self.gate == "granted"
+                    and self.grant_turn is not None
+                    and self.turn is not None
+                    and new_turn != self.turn
+                ):
+                    self.gate = "pending"
+                    self.grant_turn = None
+                    result.notes.append(
+                        f"seq {event['seq']}: new turn {new_turn} invalidated "
+                        f"grant from turn {self.turn}"
+                    )
+                self.turn = new_turn
+            elif etype == "assistant.turn_end":
+                # Ending the turn that wrote the grant makes it stale: any
+                # dispatch in a later turn cannot be "immediately before dispatch".
+                if (
+                    self.gate == "granted"
+                    and self.grant_turn is not None
+                    and self.grant_turn == self.turn
+                ):
+                    self.gate = "pending"
+                    self.grant_turn = None
+                    result.notes.append(
+                        f"seq {event['seq']}: turn {self.turn} ended; grant no "
+                        "longer valid for dispatch"
+                    )
+            elif etype == "session.loop_reset":
+                # A new orchestration loop begins with a clean gate: a grant
+                # from a prior loop must not authorize a new loop's dispatch.
+                self.gate = "pending"
+                self.grant_turn = None
+                self.grant_pre_turn = False
+                result.notes.append(
+                    f"seq {event['seq']}: new loop {payload['loop']} reset "
+                    "gate to pending"
+                )
             # All other recognized types are informational; no protocol effect.
 
         # Correlation completeness: any dispatched builder never started?
@@ -215,6 +303,11 @@ class Replayer:
                     f"builder.task {task} (toolCallId {cid}) has no matching "
                     "subagent.started (uncorrelated)"
                 )
+
+        # Reflect the final replayer state so result.gate/path report the
+        # persisted gate/path instead of misleading defaults.
+        result.gate = self.gate
+        result.path = self.path
 
         if result.violations:
             result.verdict = Verdict.VIOLATION
@@ -235,7 +328,10 @@ class Replayer:
 EXPECTED = {
     "continue.jsonl": (Verdict.OK, "continue approval path is legal"),
     "explicit-resume.jsonl": (Verdict.OK, "explicit resume approval path is legal"),
-    "bare-auto-resume.jsonl": (Verdict.OK, "bare auto-resume approval path is legal"),
+    "bare-auto-resume.jsonl": (
+        Verdict.OK,
+        "bare auto-resume re-presents a pending approval without dispatch",
+    ),
     "alternate-tool-name.jsonl": (
         Verdict.OK,
         "alternate builder-dispatch tool name is recognized",
@@ -246,7 +342,32 @@ EXPECTED = {
     ),
     "approval-denied-then-granted.jsonl": (
         Verdict.OK,
-        "a pending approval followed by a grant before dispatch is legal",
+        "denied followed by a later grant before dispatch is legal",
+    ),
+    "grant-then-denied-blocks-dispatch.jsonl": (
+        Verdict.VIOLATION,
+        "a grant revoked by a later denial cannot authorize a dispatch",
+    ),
+    "approval-denied-blocks-dispatch.jsonl": (
+        Verdict.VIOLATION,
+        "builder dispatch while gate.approval is denied",
+    ),
+    "stale-granted-new-loop.jsonl": (
+        Verdict.VIOLATION,
+        "a stale grant from a prior loop cannot authorize a new loop",
+    ),
+    "turn-grant-immediate.jsonl": (
+        Verdict.OK,
+        "grant written immediately before dispatch in the same turn is legal",
+    ),
+    "stale-grant-across-turn.jsonl": (
+        Verdict.VIOLATION,
+        "grant from an earlier turn cannot authorize a later operator turn",
+    ),
+    "pre-turn-grant-stale.jsonl": (
+        Verdict.VIOLATION,
+        "a grant written before any assistant turn marker cannot authorize "
+        "a later turn",
     ),
     "no-approval.jsonl": (
         Verdict.VIOLATION,

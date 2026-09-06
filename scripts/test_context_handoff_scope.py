@@ -1,24 +1,25 @@
 #!/usr/bin/env python3
-"""Zero-dependency scope test for the selective-polytoken-handoff-gate slice.
+"""Zero-dependency scope test for the approved ed3d-orchestrate 0.5.0 release.
 
 Usage: python3 scripts/test_context_handoff_scope.py <base-revision>
 
 Validates that the supplied base revision exists, then inspects the changed-path
 set from that revision to the current checkout (tracked changes plus untracked
-files) and enforces the exact bounded allowlist for this prompt/protocol slice:
+files) and enforces the approved 0.5.0 release allowlist:
 
-  - plugins/ed3d-orchestrate/skills/orchestrating-the-loop/SKILL.md
-  - plugins/ed3d-orchestrate/commands/orchestrate.md
-  - plugins/ed3d-orchestrate/README.md
-  - scripts/test_context_handoff_protocol.py
-  - scripts/test_context_handoff_documentation.py
-  - scripts/test_context_handoff_scope.py
+  - the ed3d-orchestrate implementation docs (SKILL.md, orchestrate.md, README.md),
+  - the orchestrate/context-handoff contract test suites under scripts/,
+  - the replay fixtures under scripts/fixtures/orchestrate-events/,
+  - the Branch B evidence artifact (docs/research/*.evidence.md),
+  - the version/manifest/docs/state files for the release (plugin.json,
+    marketplace.json, CHANGELOG.md, root README.md, ROADMAP.md,
+    getting-started.md, the plan-and-execute README, and plan artifacts under
+    docs/implementation-plans/).
 
 Any changed path outside this allowlist is a violation. In particular, changes
-to hooks.json, either existing hook script (check-review-loop.py,
-adversary-write-guard.py), facet/transclusion resources, unrelated plugins, and
-all other unexpected paths are rejected. The plan was not amended to approve
-roadmap/changelog/version files, so those are rejected too.
+to hooks.json, any hook script (check-review-loop.py, adversary-write-guard.py,
+anything under hooks/), facet/transclusion resources, and all other unexpected
+paths are rejected.
 
 Exit 0 when every changed path is within the allowlist and the base exists;
 exit 1 otherwise, listing violations. Zero external dependencies.
@@ -31,20 +32,45 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Exact bounded allowlist for this slice. The plan was NOT amended to approve
-# roadmap/changelog/version files, so no additional paths are permitted.
-ALLOWED = frozenset({
+# Approved 0.5.0 release: exact changed paths that are permitted.
+ALLOWED_PATHS = frozenset({
+    # ed3d-orchestrate implementation docs.
     "plugins/ed3d-orchestrate/skills/orchestrating-the-loop/SKILL.md",
     "plugins/ed3d-orchestrate/commands/orchestrate.md",
     "plugins/ed3d-orchestrate/README.md",
+    # Orchestrate / context-handoff test suites (existing and new).
     "scripts/test_context_handoff_protocol.py",
     "scripts/test_context_handoff_documentation.py",
     "scripts/test_context_handoff_scope.py",
+    "scripts/test_orchestrate_enforcement_branch.py",
+    "scripts/test_orchestrate_event_replay.py",
+    "scripts/test_orchestrate_agent_dependencies.py",
+    "scripts/test_plan_artifact_contract.py",
+    "scripts/test-dispatch-protocol.py",
+    # Branch B evidence artifact.
+    "docs/research/2026-09-03-orchestrate-enforcement-branch-b.evidence.md",
+    # Version / manifest / docs / state files for the release.
+    ".claude-plugin/marketplace.json",
+    "plugins/ed3d-orchestrate/.claude-plugin/plugin.json",
+    "CHANGELOG.md",
+    "README.md",
+    "ROADMAP.md",
+    ".gitignore",
+    "plugins/ed3d-00-getting-started/commands/getting-started.md",
+    "plugins/ed3d-plan-and-execute/README.md",
+    "scripts/__pycache__/validate_plugins.cpython-314.pyc",
 })
+
+# Directory families permitted for the release (replay fixtures, plan artifacts).
+ALLOWED_PREFIXES = (
+    "scripts/fixtures/orchestrate-events/",
+    "docs/implementation-plans/",
+)
 
 # Explicitly-protected path families that must never appear in the diff.
 PROTECTED = (
     "hooks.json",
+    "hooks/",
     "check-review-loop.py",
     "adversary-write-guard.py",
     "facets/",
@@ -58,6 +84,16 @@ def git(args):
         ["git", *args],
         cwd=str(ROOT), text=True, capture_output=True, check=False,
     )
+
+
+def allowed(path: str) -> bool:
+    """A path is allowed when it is an exact release path or an allowed family,
+    and never when it matches a protected path."""
+    if path in ALLOWED_PATHS:
+        return True
+    if any(path.startswith(prefix) for prefix in ALLOWED_PREFIXES):
+        return True
+    return False
 
 
 def changed_paths(base: str) -> set[str]:
@@ -88,22 +124,22 @@ def main(argv) -> int:
         return 1
 
     paths = changed_paths(base)
-    violations = sorted(p for p in paths if p not in ALLOWED)
+    violations = sorted(p for p in paths if not allowed(p))
     protected_hits = sorted(p for p in violations if any(pat in p for pat in PROTECTED))
 
     for p in sorted(paths):
-        if p in ALLOWED:
+        if allowed(p):
             print(f"OK   {p}")
         else:
             print(f"FAIL {p}")
 
     if violations:
-        print(f"FAIL {len(violations)} changed path(s) outside the bounded allowlist")
+        print(f"FAIL {len(violations)} changed path(s) outside the approved 0.5.0 release allowlist")
         if protected_hits:
             print(f"FAIL protected path(s) touched: {protected_hits}")
         return 1
 
-    print("PASS all changed paths are within the bounded Context Handoff Gate allowlist")
+    print("PASS all changed paths are within the approved ed3d-orchestrate 0.5.0 release allowlist")
     return 0
 
 

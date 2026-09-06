@@ -1,11 +1,23 @@
 #!/usr/bin/env python3
 """Deterministic offline tests for the Context Handoff Gate documentation.
 
-Verifies that the README and skill correctly classify the handoff boundary as
-prompt-only guidance, state that native Copilot runtime enforcement is
-unavailable, defer repository hook/script enforcement pending native
-builder-dispatch evidence, and do not overstate deployment/version-drift
-limitations for this prompt-only slice. Zero dependencies.
+Verifies the approved 0.5.0 release's documentation contracts for the
+plan-review -> builder handoff boundary:
+
+  - the persisted ``gate.approval`` pending/granted semantics are documented
+    (the field is written to the state file, never implied),
+  - the boundary is classified as protocol-only guidance (Branch B): it is
+    prompt-only guidance, not native Copilot runtime enforcement and not
+    repository hook/script enforcement, with the mechanical backstop deferred
+    until a native builder-dispatch payload and identity are evidenced,
+  - approval is explicit and processed later (after the operator's response),
+    before any builder dispatch,
+  - a bare auto-resume is refused (resuming alone does not grant approval),
+  - no builder is dispatched in the same turn the gate passed,
+  - no speculative ``gate_pending`` hook contract is introduced (the persisted
+    field is ``gate.approval``), and the existing hooks remain unchanged.
+
+Zero dependencies.
 """
 from __future__ import annotations
 
@@ -54,34 +66,71 @@ def test_missing_builder_dispatch_evidence_named_as_prerequisite():
     assert "deferred until a native builder-dispatch payload and identity are evidenced" in readme
 
 
-def test_prompt_only_slice_does_not_claim_runtime_enforcement():
-    # No doc may claim native runtime enforcement or a newly registered hook.
-    # The full native/prompt/hook classification lives in the skill and README;
-    # the command only needs to avoid claiming enforcement.
+def test_docs_assert_persisted_gate_approval_semantics():
+    skill = text(SKILL)
+    command_body = text(COMMAND)
+    # The skill documents gate.approval as persisted operator-approval state
+    # with pending/granted values, and ties dispatch to a granted value in the file.
+    assert "gate.approval" in skill
+    assert "persisted operator-approval state" in skill
+    assert '"pending"' in skill and '"granted"' in skill
+    assert 'no builder dispatch may occur while `gate.approval` is not `"granted"` in the file' in skill
+    # The command gates builder dispatch on the persisted pending/granted values.
+    assert 'gate.approval: "pending"' in command_body
+    assert 'gate.approval: "granted"' in command_body
+
+
+def test_docs_assert_protocol_only_branch_b():
     skill = text(SKILL)
     readme = text(README)
-    assert "gate_pending" not in skill and "gate_pending" not in readme
-    # The skill disclaims native runtime enforcement in its exact words.
+    # README names the protocol-only Branch B decision and its evidence artifact.
+    assert "protocol-only" in readme
+    assert "Branch B" in readme
+    assert "docs/research/2026-09-03-orchestrate-enforcement-branch-b.evidence.md" in readme
+    # Both docs frame the boundary as prompt-only guidance, not mechanical and
+    # not native runtime enforcement.
+    assert "prompt-only guidance" in skill and "prompt-only guidance" in readme
     assert "not **native Copilot runtime enforcement**" in skill
-    assert "enforcement is unavailable" in skill
-    # The README disclaims native runtime enforcement in its exact words.
-    assert "there is no native Copilot runtime enforcement for it" in readme
-    assert "no repository hook/script backstop" in readme
-    command_body = text(COMMAND)
-    assert "gate_pending" not in command_body
-    assert "enforcement" not in command_body
-    # The README explicitly marks the checkpoint as not enforced by the harness.
-    assert "prompt-only guidance" in readme
-    assert "there is no native Copilot runtime enforcement for it" in readme
-    assert "no repository hook/script backstop" in readme
+    assert "no native Copilot runtime enforcement" in readme
+    assert "not mechanical" in readme
+    assert "unavailable" in skill and "unavailable" in readme
+    assert "deferred" in skill and "deferred" in readme
 
 
-def test_deployment_version_drift_limits_not_overstated():
+def test_docs_assert_later_explicit_approval():
+    skill = text(SKILL)
     readme = text(README)
-    # This prompt-only slice introduces no deployment or version-drift limitation.
-    assert "no deployment or version-drift limitation is implied" in readme
-    # It does not claim a version bump or new hook registration.
-    assert "hooks.json" not in readme
+    command_body = text(COMMAND)
+    # Approval is explicit, processed later (after the operator's response),
+    # and always precedes any builder dispatch.
+    assert "only after the operator's approval response" in skill
+    assert "in a **later** turn" in skill
+    assert "approval write always precedes the dispatch" in skill
+    assert "processed before any builder dispatch" in readme
+    assert "only after the operator's explicit" in command_body
+
+
+def test_docs_assert_bare_auto_resume_refused():
+    skill = text(SKILL)
+    command_body = text(COMMAND)
+    # Resuming alone does not grant approval; a bare auto-resume is refused.
+    assert "bare auto-resume is refused" in skill
+    assert "resuming alone does not grant approval" in skill
+    assert "bare auto-resume is refused" in command_body
+
+
+def test_docs_assert_no_same_turn_dispatch():
+    skill = text(SKILL)
+    assert "Do not dispatch builders in the same turn" in skill
+    # The persisted gate.approval field gates that dispatch.
+    assert "gate.approval" in skill
+
+
+def test_no_speculative_gate_pending_contract():
+    # The persisted field is gate.approval; no doc may introduce a speculative
+    # gate_pending hook contract.
+    for body in (text(SKILL), text(README), text(COMMAND)):
+        assert "gate_pending" not in body
 
 
 def test_existing_hooks_declared_unchanged():

@@ -2,6 +2,10 @@
 
 A workflow plugin for Claude Code that guides you from rough idea to working implementation through structured design, planning, and execution phases.
 
+> **STATUS — legacy, frozen.** This plugin's **user-facing planning commands** (`/start-design-plan`, `/start-implementation-plan`, `/execute-implementation-plan`, `/flesh-it-out`, `/how-to-customize`) are **deprecated and frozen** — no new development, bugfix-only at the operator's discretion. New orchestration work targets Copilot CLI via `ed3d-orchestrate` (see the root `README.md`).
+>
+> **Not deprecated — still a live dependency:** this plugin's **builder/fixer agents** `task-implementor-fast` (Phase 4 builder fanout) and `task-bug-fixer` (adversarial-review fix loop) are the `ed3d-orchestrate` runtime dependencies. They stay maintained and should not be removed while `ed3d-orchestrate` depends on them. `code-reviewer` and `test-analyst` are **not** dispatched by `ed3d-orchestrate` — they remain because the frozen legacy package and the repository validator expect them (they are still used by this plugin's own frozen planning/execution workflow), not because orchestrate dispatches them.
+
 ## The Problem
 
 Claude Code is excellent at implementing specific, well-defined tasks. But when you have a feature idea that's still forming - where you don't yet know exactly what you want, let alone how to build it - you need more structure. You need to explore alternatives, ground your design in the actual codebase, and break work into verifiable steps.

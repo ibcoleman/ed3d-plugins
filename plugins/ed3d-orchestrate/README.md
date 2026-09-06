@@ -149,6 +149,17 @@ This boundary is **prompt-only guidance** — enforced by the workflow text, not
 
 After `/clear`, run `/ed3d-orchestrate:orchestrate` with no arguments — when a state file exists with an in-progress loop, the command auto-resumes from the recorded phase and reports where the loop stands (0.3.1). The explicit `resume` argument still works, and you can `/clear` + resume at any other phase boundary on your own initiative; the state file is current at every transition.
 
+## 0.5.0 — Enforcement Branch B (protocol-only)
+
+The plan-review → builder handoff gate ships as **protocol-only** guidance. This is the **Branch B** decision, recorded in the checked-in evidence artifact [`docs/research/2026-09-03-orchestrate-enforcement-branch-b.evidence.md`](../../docs/research/2026-09-03-orchestrate-enforcement-branch-b.evidence.md).
+
+- **Validation limitation:** on Copilot CLI **1.0.82** the native builder-dispatch payload and agent identity required for a mechanical builder-gate hook could not be validated (no captured builder-dispatch fixture; the hook reference does not specify an agent/resource identity in the pre-tool payload). A mechanical matcher built on that gap would risk blocking legitimate builder dispatches.
+- **No builder-gate artifact:** this release adds **no** new `preToolUse` hook script (no `builder-gate.py` or equivalent) to `hooks/`.
+- **No builder-gate registration:** the hook manifest is unchanged — only `check-review-loop.py` and `adversary-write-guard.py` remain registered.
+- **Not mechanical:** the handoff gate remains **prompt-only guidance**, **not mechanical** and **not** native Copilot runtime enforcement. No mechanical or runtime enforcement claim is made for it. Branch A (a mechanical builder-gate artifact plus registration) is rejected until a native builder-dispatch payload and identity are validated and evidenced.
+
+`python3 scripts/test_orchestrate_enforcement_branch.py` asserts exactly this Branch B contract (zero dependencies, offline).
+
 ## Known Limitations
 
 - The plan-review-to-builder handoff approval checkpoint is **prompt-only guidance**: there is no native Copilot runtime enforcement for it, and no repository hook/script backstop (that is deferred until a native builder-dispatch payload and identity are evidenced). An orchestrator could still violate the protocol; no deployment or version-drift limitation is implied by this prompt-only slice beyond that.
