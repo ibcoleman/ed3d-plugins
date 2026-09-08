@@ -1,0 +1,2 @@
+{"seq":1,"type":"builder.task","payload":{"task":1,"tool":"task","toolCallId":"call_n1"}}
+{"seq":2,"type":"subagent.started","payload":{"agentName":"ed3d-builder","toolCallId":"call_n1","model":"gpt-5.5"}}

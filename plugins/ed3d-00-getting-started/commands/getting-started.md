@@ -21,6 +21,8 @@ The big stick in this repository is `ed3d-plan-and-execute`, which implements an
 ## Using `ed3d-plan-and-execute`
 More in [the README for the plugin](plugins/ed3d-plan-and-execute/README.md), and it's worth skimming, but here's a quickstart:
 
+> **Frozen legacy:** the user-facing planning commands below (`/start-design-plan`, `/start-implementation-plan`, `/execute-implementation-plan`, `/flesh-it-out`, `/how-to-customize`) are deprecated/frozen — new orchestration targets `ed3d-orchestrate`. This plugin's builder/fixer agents remain a live dependency of `ed3d-orchestrate` and stay maintained.
+
 ```
 Rough Idea
     │
@@ -41,7 +43,7 @@ Rough Idea
 | Plugin | Description |
 |--------|-------------|
 | **`ed3d-00-getting-started`** | Getting started guide and onboarding for ed3d-plugins. Run `/getting-started` to see this README. |
-| **`ed3d-plan-and-execute`** | Planning and execution workflows for Claude Code. Feed it a decent-sized task and it'll help you get it done in a sustainable and thought-through way |
+| **`ed3d-plan-and-execute`** | FROZEN LEGACY. Planning and execution workflows for Claude Code — user-facing planning commands deprecated/frozen; its builder/fixer agents remain a live dependency of `ed3d-orchestrate` |
 | **`ed3d-house-style`** | House style for software development; Very Opinionated |
 | **`ed3d-basic-agents`** | Core agents for general-purpose tasks (haiku, sonnet, opus). Other plugins expect this to exist |
 | **`ed3d-research-agents`** | Agents for research across multiple data sources (codebase, internet, combined); other plugins expect this to exist |
@@ -53,4 +55,4 @@ Rough Idea
 | **`ed3d-hook-jj-git-safety`** | GitHub Copilot CLI-only preToolUse hook and Agent Skill that protect jj + Git repositories from unsafe mutations and jj metadata pollution; POSIX/WSL only |
 | **`ed3d-completion-summary`** | Copilot CLI-only sessionStart reminder hook + work-completion-summary Agent Skill for end-of-work executive handoffs; inactive by default, POSIX/WSL only |
 | **`ed3d-session-reflection`** | EXPERIMENTAL. Session awareness and conversation review tooling. Requires `ed3d-extending-claude` |
-| **`ed3d-orchestrate`** | EXPERIMENTAL. Polytoken-style orchestration loop for Copilot CLI: scout-sweep research, plan-review gate, builder fanout, adversarial review rounds with a stop-guardrail hook. Requires `ed3d-research-agents` + `ed3d-plan-and-execute` |
+| **`ed3d-orchestrate`** | EXPERIMENTAL. Polytoken-style orchestration loop for Copilot CLI: scout-sweep research, plan-review gate, builder fanout, adversarial review rounds with a stop-guardrail hook. 0.5.0 handoff gate is protocol-only (Branch B). Requires `ed3d-research-agents` + `ed3d-plan-and-execute` |

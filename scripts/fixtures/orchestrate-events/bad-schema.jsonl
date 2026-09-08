@@ -1,0 +1,2 @@
+{"seq":1,"type":"gate.approval","payload":{"approval":"granted","path":"continue"}}
+{"seq":2,"type":"builder.task","payload":{"task":"not-an-int","tool":"task","toolCallId":"call_s1"}}

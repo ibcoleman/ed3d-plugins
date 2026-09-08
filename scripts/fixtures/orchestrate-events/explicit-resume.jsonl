@@ -1,0 +1,4 @@
+{"seq":1,"type":"gate.approval","payload":{"approval":"granted","path":"explicit-resume"}}
+{"seq":2,"type":"builder.task","payload":{"task":1,"tool":"task","toolCallId":"call_c1"}}
+{"seq":3,"type":"subagent.started","payload":{"agentName":"ed3d-builder","toolCallId":"call_c1","model":"gpt-5.5"}}
+{"seq":4,"type":"subagent.completed","payload":{"agentName":"ed3d-builder","toolCallId":"call_c1","totalTokens":9000}}

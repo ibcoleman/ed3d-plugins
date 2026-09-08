@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """Deterministic offline tests for the ed3d-orchestrate Context Handoff Gate.
 
-Verifies the prompt/protocol slice of the selective-polytoken-handoff-gate plan:
-that the plan-review pass is followed by an explicit operator approval
-checkpoint, the mandatory end-of-turn rule and the no-builder-in-that-turn
-invariant are preserved, the two approval paths (`continue` and `/clear` +
-resume) precede the first builder-dispatch instruction, and no speculative
-`gate_pending` hook contract or new state field is introduced.
+Verifies the protocol slice of the approved 0.5.0 release: the plan-review
+pass is followed by an explicit operator approval checkpoint, the mandatory
+end-of-turn rule and the no-builder-in-that-turn invariant are preserved, the
+two approval paths (`continue` and `/clear` + resume) precede the first
+builder-dispatch instruction, approval is persisted as ``gate.approval`` in the
+pending/granted values, a bare auto-resume is refused (resuming alone does not
+grant approval), and no speculative ``gate_pending`` hook contract or new hook
+registration is introduced.
 
-Reads only the actual skill and command files on disk. Zero dependencies.
+Reads only the actual skill, command, and README files on disk. Zero
+dependencies.
 """
 from __future__ import annotations
 
@@ -86,13 +89,31 @@ def test_command_uses_consistent_approval_terminology():
     assert "before any builder dispatch" in body
 
 
+def test_gate_approval_persisted_pending_granted():
+    body = text(SKILL)
+    # The state schema documents the gate block with approval pending/granted.
+    assert '"gate": {' in body
+    assert '"approval": "pending"' in body
+    assert '"granted"' in body
+    # Approval is read from the file, never implied.
+    assert "`gate.approval` is read from the state file, never implied" in body
+    # A bare resume does not grant approval; dispatch requires a granted value.
+    assert "bare auto-resume is refused" in body
+    command_body = text(COMMAND)
+    assert 'gate.approval: "pending"' in command_body
+    assert 'gate.approval: "granted"' in command_body
+
+
 def test_existing_state_fields_remain_and_no_gate_pending_contract():
     body = text(SKILL)
-    # The documented state fields remain the documented fields.
-    for field in ('"plan_path"', '"base_sha"', '"head_sha"', '"phase"', '"review"'):
+    # The documented state fields remain the documented fields, now including
+    # the persisted gate block.
+    for field in ('"plan_path"', '"base_sha"', '"head_sha"', '"phase"', '"review"', '"gate":'):
         assert field in body, f"missing documented state field {field}"
-    # The gate must reference the existing fields, not a speculative gate flag.
+    # The gate must reference the existing gate.approval field, not a
+    # speculative gate_pending hook flag.
     assert 'phase: "execute"' in body
+    assert "gate.approval" in body
     assert "gate_pending" not in body, "speculative gate_pending hook contract introduced"
     command_body = text(COMMAND)
     assert "gate_pending" not in command_body
