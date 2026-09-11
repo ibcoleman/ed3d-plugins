@@ -38,7 +38,7 @@ The Copilot-native `*.agent.md` twins intentionally omit a `model` frontmatter k
 
 | Agent group | Role | Preferred dispatch |
 |-------------|------|--------------------|
-| `adversary` | Adversarial review | `gpt-5.6-sol` / `medium` |
+| `adversary` | Adversarial review | `gpt-6-astra` / `medium` |
 | `plan-reviewer`, `task-implementor-fast`, `task-bug-fixer` | Plan gates, builders, and review fixes | `gpt-5.6-luna` / `high` |
 | Research agents and `haiku-general-purpose` | Scouts | `gpt-5.6-luna` / `high` |
 
@@ -50,9 +50,11 @@ The orchestrator is the main session — there is deliberately no orchestrator a
 
 ## Model and effort defaults
 
-Dispatch uses best-effort hard-coded model IDs and reasoning efforts: the adversary uses `gpt-5.6-sol` / `medium`, and every other orchestrated role uses `gpt-5.6-luna` / `high`. This is procedural pinned-first guidance, not a mechanically intercepted runtime feature. If Copilot visibly rejects the preferred model, account, or effort before any start signal, retry exactly once with both overrides omitted so Auto-only accounts continue to work; a started or ambiguous outcome is not retried as model fallback. Existing rate-limit and protocol-failure retries remain separate.
+Dispatch uses best-effort hard-coded model IDs and reasoning efforts: the adversary uses `gpt-6-astra` / `medium`, and every other orchestrated role uses `gpt-5.6-luna` / `high`. This is procedural pinned-first guidance, not a mechanically intercepted runtime feature. If Copilot visibly rejects the preferred model, account, or effort before any start signal, retry exactly once with both overrides omitted so Auto-only accounts continue to work; a started or ambiguous outcome is not retried as model fallback. Existing rate-limit and protocol-failure retries remain separate.
 
 No agent frontmatter pins are added, so direct agent launches remain compatible with Auto-only accounts. A researcher started directly outside this orchestrated dispatch path therefore inherits the account/CLI default; configure per-agent defaults through Copilot's `/subagents` command or use an explicit native dispatch override when a direct launch must be pinned. The observed `claude-haiku-4.5` medium-effort rejection motivates the fallback; Copilot's dispatch-error semantics are otherwise unknown and require visible evidence before any fallback.
+
+For direct adversary launches, select `ed3d-orchestrate:adversary` in `/subagents` and set `gpt-6-astra` with medium effort. Updating this repository's dispatch policy does not change an existing per-agent CLI preference or an installed plugin copy.
 
 ## State File
 
@@ -165,5 +167,5 @@ The plan-review → builder handoff gate ships as **protocol-only** guidance. Th
 - The plan-review-to-builder handoff approval checkpoint is **prompt-only guidance**: there is no native Copilot runtime enforcement for it, and no repository hook/script backstop (that is deferred until a native builder-dispatch payload and identity are evidenced). An orchestrator could still violate the protocol; no deployment or version-drift limitation is implied by this prompt-only slice beyond that.
 - Facet discipline (e.g. read-only planning) is enforced by instruction, not by harness. The guardrail hook narrows this gap only for the review loop.
 - The hook's stale-verdict scan is nonce-gated (0.3.3): it matches only this loop's `VERDICT: SHIP [<nonce>]` marker, so stale verdict strings from a prior loop in the same session can no longer false-match. Residual gaps: pre-0.3.3 in-flight state files carry no nonce and skip the scan; a crashed loop can leave stale active+PENDING state that write-blocks subagents until the state file is repaired; bash-redirection writes bypass the write-guard (prose rule remains).
-- Dispatch model selection is pinned-first best-effort guidance with a conservative explicit-pre-start-rejection-only Auto fallback. The adversary prefers `gpt-5.6-sol` / `medium`; all other orchestrated roles prefer `gpt-5.6-luna` / `high`. It is not a mechanically intercepted runtime feature; direct agent launches outside this dispatch path inherit account/CLI defaults, while unknown dispatch-error semantics and catalog drift require visible evidence. Preferred-vs-fallback provenance is transcript/report-only and does not survive `/clear` or resume; the existing state schema is not extended to persist it.
+- Dispatch model selection is pinned-first best-effort guidance with a conservative explicit-pre-start-rejection-only Auto fallback. The adversary prefers `gpt-6-astra` / `medium`; all other orchestrated roles prefer `gpt-5.6-luna` / `high`. It is not a mechanically intercepted runtime feature; direct agent launches outside this dispatch path inherit account/CLI defaults, while unknown dispatch-error semantics and catalog drift require visible evidence. Preferred-vs-fallback provenance is transcript/report-only and does not survive `/clear` or resume; the existing state schema is not extended to persist it.
 - Parallel dispatch can trip provider rate limits; the skills fall back to serial/small-batch dispatch on rate-limit errors.
