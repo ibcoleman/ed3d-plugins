@@ -13,6 +13,7 @@ The orchestrator (UUID session id), inactive reviews, and the bug-fixer
 missing state file, or any internal error exits 0 with no output. Known gap:
 bash redirection writes are not intercepted.
 """
+# pattern: Mixed (unavoidable)
 import json
 import os
 import sys

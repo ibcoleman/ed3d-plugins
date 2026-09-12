@@ -1,0 +1,2 @@
+{"seq":1,"type":"orchestration.ownership","payload":{"status":"owned","sessionId":"owner-a","transferFrom":"","task":"review task","planPath":"/repo/plan.md","phase":"review"}}
+{"seq":2,"type":"orchestration.resume","payload":{"sessionId":"owner-a","task":"review task","planPath":"/repo/plan.md","phase":"review","ownershipStatus":"owned","recordedOwner":"owner-a","transferFrom":"","explicit":true,"taskMatches":true,"planMatches":true,"reviewActive":true,"reviewVerdict":"PENDING","approval":"pending","preserveRequirements":true}}

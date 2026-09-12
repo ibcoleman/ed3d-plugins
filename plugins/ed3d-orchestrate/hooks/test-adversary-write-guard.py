@@ -91,6 +91,12 @@ def main():
     root, _, _, out, decision = run({"sessionId": "call_x", "toolCalls": [{"name": "edit"}]}, None)
     check("missing state -> allow", out == "" and decision is None)
     shutil.rmtree(root, ignore_errors=True)
+    root, _, _, out, decision = run(
+        {"sessionId": "call_pending", "toolCalls": [{"name": "edit"}]},
+        state(active=True, verdict="PENDING"),
+    )
+    check("missing reviewer provenance does not weaken PENDING write guard", decision and decision.get("decision") == "block", out)
+    shutil.rmtree(root, ignore_errors=True)
     root = tempfile.mkdtemp(prefix="ed3d-write-guard-test-")
     proc = subprocess.run([sys.executable, HOOK], input=b"not json", capture_output=True, cwd=root)
     check("malformed stdin -> allow", proc.returncode == 0 and proc.stdout == b"")

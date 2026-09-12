@@ -29,6 +29,11 @@ At loop start, create `.ed3d/orchestrate-state.json` in the working directory of
     "correction_attempts": 0,
     "remaining_outcomes": []
   },
+  "ownership": {
+    "status": "unowned",
+    "session_id": null,
+    "transfer_from": null
+  },
   "review": {
     "active": false,
     "round": 0,
@@ -37,7 +42,13 @@ At loop start, create `.ed3d/orchestrate-state.json` in the working directory of
     "open_critical_high": [],
     "consecutive_blocks": 0,
     "history": [],
-    "nonce": null
+    "nonce": null,
+    "provenance": null,
+    "recovery": {
+      "status": "none",
+      "attempts": 0,
+      "marker": null
+    }
   }
 }
 ```
@@ -104,6 +115,52 @@ The review block's `history` field is the append-only round record:
 - **The loop nonce.** Whenever a review arms — including re-arming an existing inactive review block for a new loop — generate a fresh nonce: 8 lowercase hex characters, written as `review.nonce` (overwrite any prior value; never carry a nonce across loops). It persists for the whole loop, across every round and `/clear`+resume, and travels in every adversary dispatch as `NONCE: <value>`. The guardrail hook matches rendered verdicts by this tag, which is what keeps the literal `VERDICT: SHIP` strings in skill and agent prose from being mistaken for a real verdict.
 - **`verdict: "PENDING"` means an adversary dispatch is in flight — at every round.** Round 1 starts PENDING; after every FIX-FIRST round, once the fixer's commits are verified and `head_sha` is refreshed, re-arm in one state write: `round: round + 1` and `verdict: "PENDING"` together, before re-dispatching the adversary. While verdict is PENDING, the write-guard hook mechanically blocks write-class tool calls from subagents — that is the enforcement layer behind the adversary's no-writes rule, so treat any adversary claim of having fixed the state file or the working tree as suspect and verify against git.
 - On completion (SHIP or operator-accepted), set `review.active: false`, reset `consecutive_blocks: 0`, and leave the final `verdict` in place. The state file is the audit trail — the operator can reconstruct every transition from it after the fact.
+
+### Ownership and review-lineage contract
+
+The canonical state always includes an explicit ownership block. A fresh
+state starts with `"ownership": {"status": "unowned", "session_id": null,
+"transfer_from": null}`. The only statuses are `unowned`, `owned`,
+`transfer_pending`, and `recovery_required`; legacy state without this block
+is never treated as owned. An active review may also carry `"provenance":
+null` until dispatch, then the current `round`,
+`dispatch_tool_call_id`, and `reviewer_agent_id`. These are evidence bindings,
+not authentication claims.
+
+The command distinguishes exactly three resume paths:
+
+| Path | Entry and state action |
+|---|---|
+| **same-owner continuation** | an identity-bearing `resume` matches the persisted owner, task, absolute plan, and phase; preserve approval, review, nonce, history, and SHAs |
+| **authorized ownership transfer** | `transfer_pending` retains the old `session_id` and matching `transfer_from`; explicit `resume` with a different live session and matching task/plan/phase replaces the owner and clears `transfer_from` |
+| **explicit legacy recovery** | missing/malformed ownership or `recovery_required`; explicit identity-bearing `resume` with matching task and absolute plan normalizes ownership without inferring a dispatch or verdict |
+
+An unauthorized non-transfer session is refused without mutation. While
+`transfer_pending`, the old owner's stop is allowed so `/clear` can complete;
+the new session cannot inherit ownership before the explicit claim. Stop events
+accept both `sessionId` and `session_id`. Missing identity or invalid binding
+uses a supported allow marker `ownership-recovery-required`; it never mutates
+the state or claims a review result.
+
+The current review result is bound by `review.provenance`, not transcript text.
+The hook performs a bounded streaming JSONL scan from the beginning of the
+transcript. It joins the parent dispatch and `tool.execution_start` by
+`toolCallId`, then `subagent.started`, the expected reviewer `assistant.message`,
+and `subagent.completed`. Only the latest reviewer message with the exact
+two-line nonce-tagged verdict is evidence; quoted or fenced examples,
+duplicates, trailing content, stale dispatches, and `tool.execution_complete`
+result text are rejected. The parser retains fixed-size state and therefore
+handles transcripts beyond 256 KiB without a tail scan.
+
+Missing completion lineage never weakens a valid owner's ordinary PENDING
+enforcement. A complete scan that cannot prove an already-bound result uses the
+diagnostic `review-reconciliation-unavailable` marker and the existing single
+current-round retry budget. After one retry, the explicit
+`reconciliation_exhausted` state sets `review.active: false`,
+`review.verdict: "PENDING"`, and `review.recovery.attempts: 1`; stopping is
+allowed only with a no-verdict diagnostic and an explicit operator choice.
+The exhausted state means no verdict exists, never SHIP. A later same-owner
+resume may re-arm one fresh attempt, not fabricate a verdict.
 
 ### State transition checklist
 

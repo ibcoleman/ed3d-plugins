@@ -4,6 +4,25 @@ Durable context for humans and agents picking this work up after a break. Each e
 
 Last updated: 2026-09-03
 
+## Landed: review-loop owner isolation and bounded lineage recovery (2026-09-12)
+
+- Parent stop/state decisions are scoped to the persisted owner. Unrelated
+  parent sessions silently allow without counter/state mutation; missing or
+  malformed identity emits `ownership-recovery-required`. This does not claim
+  child isolation because the observed `preToolUse` payload has **no
+  parent-owner field**.
+- The existing review-wide child write enforcement remains active for observed
+  `call_` contexts. It is retained as **review-wide child write enforcement**,
+  not cross-session isolation, and Branch B remains the protocol-only builder
+  handoff boundary.
+- Reviewer reconciliation now uses bounded streaming JSONL lineage and exact
+  nonce-tagged two-line terminal blocks. One existing retry leads to explicit
+  `reconciliation_exhausted` / no-verdict operator choice rather than repeated
+  stop blocking.
+- This is the documented parent stop/state isolation boundary; there is no
+  parent-owner field in the child payload (the contract names this exact
+  limitation as **no parent-owner field**).
+
 ## Landed: ed3d-orchestrate 0.5.0 — Enforcement Branch B (protocol-only) (2026-09-03)
 
 - **Decision:** the plan-review → builder handoff gate ships as **protocol-only** (Branch B). A mechanical builder-gate slice (Branch A) is rejected until a native builder-dispatch payload and identity are validated and evidenced.

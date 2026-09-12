@@ -70,6 +70,44 @@ concurrent model-mediated state edits. A verdict must be persisted and
 re-read before it is reported; malformed state never becomes a fabricated
 verdict.
 
+## Ownership, clear, and resume
+
+The canonical state includes `"ownership": {"status": "unowned",
+"session_id": null, "transfer_from": null}` and `review.provenance` (null
+before dispatch, then the current round's `dispatch_tool_call_id` and
+`reviewer_agent_id`). Ownership statuses are `unowned`, `owned`,
+`transfer_pending`, and `recovery_required`; missing or malformed ownership is
+not an implicit owner claim. The stop hook reads both `sessionId` and
+`session_id`.
+
+`orchestrate resume` distinguishes these paths:
+
+| Path | Required evidence and result |
+|---|---|
+| **same-owner continuation** | `owned` plus a live session matching `session_id`, the task, absolute plan, and phase; preserve approval and all review requirements without `transfer_pending` |
+| **authorized ownership transfer** | `transfer_pending`, `transfer_from` equal to the old `session_id`, explicit `$1=resume`, a different live session, and matching task/absolute plan/phase; replace the owner, clear `transfer_from`, and preserve pending approval or active/PENDING review |
+| **explicit legacy recovery** | missing/malformed ownership or `recovery_required`, explicit `$1=resume`, live identity, and matching task/absolute plan/phase; bind the new owner without inferring dispatch or verdict |
+
+A different session without a valid transfer marker is an unauthorized
+non-transfer session and is refused without mutation. An old owner may stop
+while `transfer_pending`; a new session is silently allowed before its claim.
+Missing event identity or malformed transfer emits the stable
+`ownership-recovery-required` allow marker and leaves bytes unchanged.
+
+Review provenance is observational evidence: the stop hook accepts only a
+current dispatch/start/reviewer-message/completion lineage and its exact
+nonce-tagged two-line terminal verdict. It streams JSONL beyond 256 KiB and
+ignores quoted, fenced, duplicate, trailing, stale, wrong-lineage, and
+`tool.execution_complete` text. A valid owner with missing or unavailable
+completed lineage remains blocked with `review-reconciliation-unavailable`;
+normal active PENDING with no completed result remains ordinary enforcement.
+The protocol permits one current-round reconciliation retry. The second
+unavailable result writes `reconciliation_exhausted`, `attempts: 1`,
+`review.active: false`, and `review.verdict: "PENDING"` in one transition.
+Stopping is then allowed only with `review-reconciliation-unavailable` and
+an explicit no-verdict operator choice. No verdict exists in that state and
+no SHIP outcome is inferred.
+
 ## Normal mode
 
 $1 contains the task description. If it is empty or vague after the auto-resume check above, ask the operator what they want accomplished — do not guess a task.

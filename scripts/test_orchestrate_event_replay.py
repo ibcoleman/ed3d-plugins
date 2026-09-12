@@ -118,6 +118,54 @@ _SCHEMAS = {
         },
         {"approval": {"pending"}},
     ),
+    "orchestration.ownership": (
+        {
+            "status": str,
+            "sessionId": str,
+            "transferFrom": str,
+            "task": str,
+            "planPath": str,
+            "phase": str,
+        },
+        {"status": {"unowned", "owned", "transfer_pending", "recovery_required"}, "phase": {"execute", "review"}},
+    ),
+    "orchestration.resume": (
+        {
+            "sessionId": str,
+            "task": str,
+            "planPath": str,
+            "phase": str,
+            "ownershipStatus": str,
+            "recordedOwner": str,
+            "transferFrom": str,
+            "explicit": bool,
+            "taskMatches": bool,
+            "planMatches": bool,
+            "reviewActive": bool,
+            "reviewVerdict": str,
+            "approval": str,
+            "preserveRequirements": bool,
+        },
+        {
+            "phase": {"execute", "review"},
+            "ownershipStatus": {"unowned", "owned", "transfer_pending", "recovery_required"},
+            "approval": {"pending", "granted"},
+        },
+    ),
+    "review.reconciliation": (
+        {
+            "status": str,
+            "attempts": int,
+            "round": int,
+            "marker": str,
+            "active": bool,
+            "verdict": str,
+        },
+        {
+            "status": {"none", "reconciliation_retrying", "reconciliation_exhausted"},
+            "verdict": {"PENDING", "SHIP", "FIX-FIRST"},
+        },
+    ),
     "skill.invoked": ({"skill": str}, {}),
     "permission.requested": ({"toolCallId": str}, {}),
     "permission.completed": ({"toolCallId": str}, {}),
@@ -184,6 +232,12 @@ class ReplayResult:
     notes: list = field(default_factory=list)
     unresolved_reset: bool = False
     unresolved_binding: bool = False
+    ownership: str = "unowned"
+    owner_session: str = ""
+    transfer_from: str = ""
+    recovery_status: str = "none"
+    recovery_attempts: int = 0
+    preserved_requirements: bool = True
 
 
 class Replayer:
@@ -199,6 +253,12 @@ class Replayer:
         self.plan_path = ""
         self.unresolved_reset = False
         self.unresolved_binding = False
+        self.ownership = "unowned"
+        self.owner_session = ""
+        self.transfer_from = ""
+        self.recovery_status = "none"
+        self.recovery_attempts = 0
+        self.preserved_requirements = True
         self._builders = {}  # toolCallId -> task number (dispatched, uncorrelated yet)
         self._started = set()  # toolCallIds with a subagent.started
 
@@ -215,6 +275,11 @@ class Replayer:
                 result.path = self.path
                 result.unresolved_reset = self.unresolved_reset
                 result.unresolved_binding = self.unresolved_binding
+                result.ownership = self.ownership
+                result.owner_session = self.owner_session
+                result.transfer_from = self.transfer_from
+                result.recovery_status = self.recovery_status
+                result.recovery_attempts = self.recovery_attempts
                 return result
             prev_seq = event["seq"]
             result.events_processed = idx + 1
@@ -413,6 +478,79 @@ class Replayer:
                         f"seq {event['seq']}: pending reset handoff for "
                         f"{payload['requestedTask']!r}; execution remains refused"
                     )
+            elif etype == "orchestration.ownership":
+                self.ownership = payload["status"]
+                self.owner_session = payload["sessionId"]
+                self.transfer_from = payload["transferFrom"]
+                self.task = payload["task"]
+                self.plan_path = payload["planPath"]
+                result.notes.append(
+                    f"seq {event['seq']}: ownership state {self.ownership!r} "
+                    f"for {self.owner_session or 'no session'}"
+                )
+            elif etype == "orchestration.resume":
+                valid_binding = (
+                    payload["explicit"]
+                    and payload["planPath"].startswith("/")
+                    and payload["taskMatches"]
+                    and payload["planMatches"]
+                    and payload["preserveRequirements"]
+                )
+                if not valid_binding:
+                    result.violations.append(
+                        f"seq {event['seq']}: resume refused because task/plan/"
+                        "explicit binding is invalid"
+                    )
+                elif self.ownership == "owned" and payload["sessionId"] == self.owner_session:
+                    result.notes.append(
+                        f"seq {event['seq']}: same-owner continuation preserved "
+                        "approval and review requirements"
+                    )
+                elif (
+                    self.ownership == "transfer_pending"
+                    and payload["sessionId"] != self.owner_session
+                    and payload["transferFrom"] == self.owner_session
+                    and payload["transferFrom"] == self.transfer_from
+                ):
+                    self.owner_session = payload["sessionId"]
+                    self.transfer_from = ""
+                    self.ownership = "owned"
+                    result.notes.append(
+                        f"seq {event['seq']}: authorized ownership transfer claimed "
+                        f"by {self.owner_session}"
+                    )
+                elif self.ownership in {"unowned", "recovery_required"} and payload["sessionId"]:
+                    self.owner_session = payload["sessionId"]
+                    self.transfer_from = ""
+                    self.ownership = "owned"
+                    result.notes.append(
+                        f"seq {event['seq']}: explicit legacy recovery rebound "
+                        f"ownership to {self.owner_session}"
+                    )
+                else:
+                    result.violations.append(
+                        f"seq {event['seq']}: unauthorized non-transfer resume "
+                        "cannot inherit ownership"
+                    )
+                self.preserved_requirements = payload["preserveRequirements"]
+                if payload["approval"] != "pending" or not payload["preserveRequirements"]:
+                    result.violations.append(
+                        f"seq {event['seq']}: resume did not preserve pending "
+                        "approval/review requirements"
+                    )
+            elif etype == "review.reconciliation":
+                if payload["attempts"] not in {0, 1}:
+                    result.violations.append(
+                        f"seq {event['seq']}: reconciliation attempts exceed one"
+                    )
+                if payload["status"] == "reconciliation_exhausted":
+                    if payload["active"] or payload["verdict"] != "PENDING":
+                        result.violations.append(
+                            f"seq {event['seq']}: exhausted recovery must be inactive "
+                            "with no verdict"
+                        )
+                self.recovery_status = payload["status"]
+                self.recovery_attempts = payload["attempts"]
             # All other recognized types are informational; no protocol effect.
 
         # Correlation completeness: any dispatched builder never started?
@@ -429,6 +567,12 @@ class Replayer:
         result.path = self.path
         result.unresolved_reset = self.unresolved_reset
         result.unresolved_binding = self.unresolved_binding
+        result.ownership = self.ownership
+        result.owner_session = self.owner_session
+        result.transfer_from = self.transfer_from
+        result.recovery_status = self.recovery_status
+        result.recovery_attempts = self.recovery_attempts
+        result.preserved_requirements = self.preserved_requirements
 
         if result.violations:
             result.verdict = Verdict.VIOLATION
@@ -533,6 +677,30 @@ EXPECTED = {
     "malformed-state.jsonl": (Verdict.MALFORMED, "non-increasing seq"),
     "unrecognized-type.jsonl": (Verdict.MALFORMED, "unrecognized event type"),
     "bad-schema.jsonl": (Verdict.MALFORMED, "payload schema violation"),
+    "same-owner-continuation.jsonl": (
+        Verdict.OK,
+        "same-owner resume preserves approval and active review requirements",
+    ),
+    "authorized-transfer.jsonl": (
+        Verdict.VIOLATION,
+        "a transfer claim preserves review requirements but builder dispatch still needs approval",
+    ),
+    "unauthorized-transfer.jsonl": (
+        Verdict.VIOLATION,
+        "a non-transfer session cannot inherit ownership",
+    ),
+    "transfer-without-claim.jsonl": (
+        Verdict.VIOLATION,
+        "transfer-pending state cannot dispatch before a claim",
+    ),
+    "legacy-recovery.jsonl": (
+        Verdict.OK,
+        "explicit identity-bearing resume rebinds legacy ownership without a verdict",
+    ),
+    "reconciliation-exhausted-rearm.jsonl": (
+        Verdict.OK,
+        "unavailable reconciliation exhausts once and later re-arms explicitly",
+    ),
 }
 
 
@@ -589,6 +757,24 @@ def check_resume_semantics(name: str, result: ReplayResult) -> str | None:
     if name == "pending-reset-recovery.jsonl":
         if result.unresolved_reset:
             return "explicit reset recovery should clear the pending reset"
+    if name == "same-owner-continuation.jsonl":
+        if result.ownership != "owned" or not result.preserved_requirements:
+            return "same-owner continuation did not preserve owner/review requirements"
+    if name == "authorized-transfer.jsonl":
+        if result.owner_session != "owner-b":
+            return "authorized transfer did not claim the new owner"
+    if name == "unauthorized-transfer.jsonl":
+        if result.ownership != "owned" or result.owner_session != "owner-a":
+            return "unauthorized session mutated ownership"
+    if name == "transfer-without-claim.jsonl":
+        if result.ownership != "transfer_pending":
+            return "transfer-pending state did not remain unclaimed"
+    if name == "legacy-recovery.jsonl":
+        if result.ownership != "owned" or result.owner_session != "owner-new":
+            return "legacy recovery did not bind the explicit session"
+    if name == "reconciliation-exhausted-rearm.jsonl":
+        if result.recovery_attempts != 1 or result.recovery_status != "reconciliation_retrying":
+            return "reconciliation recovery was not bounded and explicitly re-armed"
     return None
 
 

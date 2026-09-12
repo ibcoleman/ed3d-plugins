@@ -1,0 +1,2 @@
+{"seq":1,"type":"orchestration.ownership","payload":{"status":"transfer_pending","sessionId":"owner-a","transferFrom":"owner-a","task":"review task","planPath":"/repo/plan.md","phase":"review"}}
+{"seq":2,"type":"builder.task","payload":{"task":1,"tool":"Task","toolCallId":"call_builder"}}

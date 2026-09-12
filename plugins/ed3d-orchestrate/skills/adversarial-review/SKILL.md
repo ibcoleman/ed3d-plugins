@@ -25,13 +25,56 @@ Drive adversarial review rounds over completed implementation work. This skill i
   "open_critical_high": [],
   "consecutive_blocks": 0,
   "history": [],
-  "nonce": "a1b2c3d4"
+  "nonce": "a1b2c3d4",
+  "provenance": null,
+  "recovery": {
+    "status": "none",
+    "attempts": 0,
+    "marker": null
+  }
+},
+"ownership": {
+  "status": "unowned",
+  "session_id": null,
+  "transfer_from": null
 }
 ```
 
 Whenever a review arms — including re-arming an existing inactive review block for a new loop — generate a fresh nonce: 8 lowercase hex characters, written as `review.nonce`, overwriting any prior value. Include it in every adversary dispatch as `NONCE: <value>` — the guardrail hook matches rendered verdicts by this tag, which is what keeps the literal `VERDICT: SHIP` strings in skill and agent prose from being mistaken for a real verdict (that false match fabricated a terminal SHIP live on 2026-08-16). Never reuse a nonce across loops.
 
 - **Resume reconciliation.** If resuming into an active review (`review.active: true` on resume), reconcile first: any verdict already rendered in this session's transcript but absent from the state file must be written to the state file before any new dispatch. Do not dispatch a fresh adversary to "check" a verdict the transcript already contains. (This recovers same-session omissions only — after `/clear` the transcript is gone, the state file is the sole truth, and a stale `PENDING` on an already-completed loop can then only be caught by the operator or the round history.)
+
+### Owner, provenance, and bounded reconciliation
+
+The state contract always carries `"ownership"` with statuses `unowned`,
+`owned`, `transfer_pending`, or `recovery_required`; it carries
+the `"provenance"` field (`review.provenance`) as `null` before dispatch and then the current `round`,
+`dispatch_tool_call_id`, and `reviewer_agent_id`. The command's three explicit
+resume paths are **same-owner continuation**, **authorized ownership transfer**,
+and **explicit legacy recovery**. A transfer requires the old owner to write
+`transfer_pending` before `/clear`; an unrelated session cannot inherit it.
+Missing identity uses `ownership-recovery-required` without mutating state.
+
+Reconciliation is a conservative streaming JSONL scan, not substring matching.
+The dispatch `toolCallId`, `subagent.started`, expected reviewer
+`assistant.message`, and `subagent.completed` must form one current lineage.
+`tool.execution_complete` result content is never verdict evidence. The latest
+reviewer message must end with exactly two lines:
+`VERDICT: SHIP [<nonce>]` plus `has_critical_or_high: false`, or
+`VERDICT: FIX-FIRST [<nonce>]` plus `has_critical_or_high: true`. Quoted,
+fenced, duplicate, trailing, stale, wrong-lineage, and out-of-order variants
+are unavailable. The parser retains bounded state and scans past 256 KiB.
+
+Missing reviewer completion provenance with an active PENDING review remains
+ordinary owner enforcement. When a bound completed-result check is unavailable,
+the owner remains blocked with `review-reconciliation-unavailable`; use the
+existing one current-round protocol retry, not repeated stop blocking. On the
+second unavailable result, write `reconciliation_exhausted`, attempts `1`,
+`review.active: false`, and `review.verdict: "PENDING"` atomically. no verdict
+exists; the phrase "no verdict exists" is the required operator diagnostic;
+stopping is allowed only with the diagnostic marker and an explicit
+operator choice. A later same-owner resume may reset the recovery block and
+re-arm one attempt, but never fabricates SHIP.
 
 `max_rounds` defaults to 3; the operator can change it in the state file at any time.
 
