@@ -4,8 +4,8 @@
 Verifies the protocol slice of the approved 0.5.0 release: the plan-review
 pass is followed by an explicit operator approval checkpoint, the mandatory
 end-of-turn rule and the no-builder-in-that-turn invariant are preserved, the
-two approval paths (`continue` and `/clear` + resume) precede the first
-builder-dispatch instruction, approval is persisted as ``gate.approval`` in the
+explicit-continue approval paths precede the first builder-dispatch
+instruction, approval is persisted as ``gate.approval`` in the
 pending/granted values, a bare auto-resume is refused (resuming alone does not
 grant approval), and no speculative ``gate_pending`` hook contract or new hook
 registration is introduced.
@@ -59,9 +59,15 @@ def test_no_builder_in_that_turn_invariant():
 
 def test_two_approval_paths_are_documented():
     body = text(SKILL)
-    # Both `continue` and `/clear` + resume must be present as approval paths.
-    assert "reply **continue** to approve" in body
-    assert "`/clear` and then `/ed3d-orchestrate:orchestrate resume` to approve" in body
+    # Both paths require an explicit `continue`; `/clear` alone is only a
+    # context handoff and does not approve or transfer ownership.
+    assert "reply **continue** to approve and start the builders in this context" in body
+    assert (
+        "first record `transfer_pending`, run `/clear`, then "
+        "`/ed3d-orchestrate:orchestrate resume` and reply **continue** in the fresh context"
+        in body
+    )
+    assert "`/clear` alone is only a context handoff, not approval or ownership transfer" in body
 
 
 def test_approval_wording_precedes_first_builder_dispatch_in_skill():
@@ -70,15 +76,21 @@ def test_approval_wording_precedes_first_builder_dispatch_in_skill():
     # The first builder-dispatch instruction in the skill is Phase 4's fan-out.
     fanout_idx = body.index("Fan out builders")
     assert approval_idx < fanout_idx, "approval checkpoint must precede builder dispatch"
-    # The `continue` approval path must appear before the first dispatch too.
-    assert body.index("reply **continue**") < fanout_idx
-    # The `/clear` + resume approval path must lie after the gate heading and
+    # Both explicit-continue approval paths must lie after the gate heading and
     # before the first builder-dispatch instruction as well.
+    continue_idx = body.index(
+        "reply **continue** to approve and start the builders in this context"
+    )
     clear_resume_idx = body.index(
-        "`/clear` and then `/ed3d-orchestrate:orchestrate resume` to approve"
+        "first record `transfer_pending`, run `/clear`, then "
+        "`/ed3d-orchestrate:orchestrate resume` and reply **continue** in the fresh context"
+    )
+    assert approval_idx < continue_idx < fanout_idx, (
+        "the same-context continue approval phrase must lie after the gate heading "
+        "and before the first builder dispatch"
     )
     assert approval_idx < clear_resume_idx < fanout_idx, (
-        "the `/clear` + resume approval phrase must lie after the gate heading "
+        "the `/clear` + resume continue approval phrase must lie after the gate heading "
         "and before the first builder dispatch"
     )
 
@@ -235,6 +247,11 @@ def _assert_canonical_defaults(state: dict) -> None:
         "correction_attempts": 0,
         "remaining_outcomes": [],
     }
+    assert state["ownership"] == {
+        "status": "unowned",
+        "session_id": None,
+        "transfer_from": None,
+    }
     assert state["review"] == {
         "active": False,
         "round": 0,
@@ -244,6 +261,12 @@ def _assert_canonical_defaults(state: dict) -> None:
         "consecutive_blocks": 0,
         "history": [],
         "nonce": None,
+        "provenance": None,
+        "recovery": {
+            "status": "none",
+            "attempts": 0,
+            "marker": None,
+        },
     }
 
 

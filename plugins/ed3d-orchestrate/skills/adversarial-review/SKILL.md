@@ -78,9 +78,12 @@ Same-round reconciliation/protocol retry is a separate state-machine
 transition. Before the sole retry dispatch, persist
 `review.recovery.status: reconciliation_retrying`, `attempts: 1`, and marker
 `review-reconciliation-unavailable`. Preserve that state, the round, nonce,
-history, SHAs, approval, provenance, and ownership through dispatch,
-continuation, and authorized transfer; never reset it as retry
-initialization. If the retry is unavailable again, atomically write
+history, SHAs, approval, and ownership through dispatch, continuation, and
+authorized transfer; never reset it as retry initialization. Do not preserve
+failed dispatch/reviewer provenance: clear only `review.provenance` before
+the retry, then replace it with the new observed dispatch tool-call ID and
+reviewer agent ID from that retry's parent dispatch/start pair. If the retry
+is unavailable again, atomically write
 `reconciliation_exhausted`, attempts `1`, inactive/PENDING/no-verdict state.
 Only a new round or an explicitly authorized same-owner resume from exhausted
 may reset `status: none`, `attempts: 0`, `marker: null` and grant one fresh

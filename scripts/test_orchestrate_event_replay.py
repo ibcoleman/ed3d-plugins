@@ -128,7 +128,10 @@ _SCHEMAS = {
             "planPath": str,
             "phase": str,
         },
-        {"status": {"unowned", "owned", "transfer_pending", "recovery_required"}, "phase": {"execute", "review"}},
+        {
+            "status": {"unowned", "owned", "transfer_pending", "recovery_required"},
+            "phase": {"research", "execute", "review"},
+        },
     ),
     "orchestration.resume": (
         {
@@ -166,6 +169,14 @@ _SCHEMAS = {
             "status": {"none", "reconciliation_retrying", "reconciliation_exhausted"},
             "verdict": {"PENDING", "SHIP", "FIX-FIRST"},
         },
+    ),
+    "review.provenance": (
+        {
+            "round": int,
+            "dispatchToolCallId": str,
+            "reviewerAgentId": str,
+        },
+        {},
     ),
     "skill.invoked": ({"skill": str}, {}),
     "permission.requested": ({"toolCallId": str}, {}),
@@ -303,6 +314,11 @@ def _validate_event(event: dict, prev_seq: int):
             return "auto-resume requires a non-empty task"
     elif etype == "review.reconciliation" and payload["round"] < 1:
         return "reconciliation round must be positive"
+    elif etype == "review.provenance":
+        if payload["round"] < 1:
+            return "provenance round must be positive"
+        if not payload["dispatchToolCallId"].strip() or not payload["reviewerAgentId"].strip():
+            return "provenance requires non-empty dispatch and reviewer identities"
     if "snapshot" in payload:
         snapshot_error = _validate_snapshot(payload["snapshot"])
         if snapshot_error:
@@ -337,6 +353,12 @@ class ReplayResult:
     review_history: list = field(default_factory=list)
     base_sha: str = ""
     head_sha: str = ""
+    task: str | None = None
+    plan_path: str = ""
+    phase: str = ""
+    provenance_round: int | None = None
+    dispatch_tool_call_id: str = ""
+    reviewer_agent_id: str = ""
 
 
 class Replayer:
@@ -366,6 +388,9 @@ class Replayer:
         self.review_history = []
         self.base_sha = ""
         self.head_sha = ""
+        self.provenance_round = None
+        self.dispatch_tool_call_id = ""
+        self.reviewer_agent_id = ""
         self.state_bound = False
         self.rearm_authorized = False
         self._builders = {}  # toolCallId -> task number (dispatched, uncorrelated yet)
@@ -441,6 +466,12 @@ class Replayer:
                 result.review_history = deepcopy(self.review_history)
                 result.base_sha = self.base_sha
                 result.head_sha = self.head_sha
+                result.task = self.task
+                result.plan_path = self.plan_path
+                result.phase = self.phase
+                result.provenance_round = self.provenance_round
+                result.dispatch_tool_call_id = self.dispatch_tool_call_id
+                result.reviewer_agent_id = self.reviewer_agent_id
                 return result
             prev_seq = event["seq"]
             result.events_processed = idx + 1
@@ -573,6 +604,9 @@ class Replayer:
                 self.grant_pre_turn = False
                 self.unresolved_reset = False
                 self.unresolved_binding = False
+                self.provenance_round = None
+                self.dispatch_tool_call_id = ""
+                self.reviewer_agent_id = ""
                 result.notes.append(
                     f"seq {event['seq']}: new loop {payload['loop']} reset "
                     "gate to pending"
@@ -600,33 +634,47 @@ class Replayer:
                 self.review_history = []
                 self.base_sha = ""
                 self.head_sha = ""
+                self.provenance_round = None
+                self.dispatch_tool_call_id = ""
+                self.reviewer_agent_id = ""
                 self.state_bound = False
                 result.notes.append(
                     f"seq {event['seq']}: task start reset control-plane state "
                     f"for {self.task!r}"
                 )
             elif etype == "orchestration.auto_resume":
-                # Resuming never carries approval across the checkpoint.  A
-                # valid binding clears only the binding rejection; a pending
-                # reset remains unresolved until an explicit task reset.
-                self.gate = "pending"
-                self.grant_turn = None
-                self.grant_pre_turn = False
+                # Auto-resume is an observation of an existing binding, not a
+                # replacement for the persisted task/plan/phase/review state.
+                # A task_start may leave only the initial research phase
+                # unbound; it still records the task and therefore locks it.
                 task_matches = (
-                    payload["taskMatches"]
-                    if self.task is None
-                    else payload["task"] == self.task
+                    self.task is None or payload["task"] == self.task
                 )
-                if task_matches != payload["taskMatches"]:
-                    result.violations.append(
-                        f"seq {event['seq']}: auto-resume taskMatches does not "
-                        "match the persisted task"
+                plan_matches = (
+                    not self.plan_path or payload["planPath"] == self.plan_path
+                )
+                phase_matches = (
+                    not self.phase
+                    or payload["phase"] == self.phase
+                    or (not self.state_bound and self.phase == "research")
+                )
+                review_matches = (
+                    not self.state_bound
+                    or (
+                        payload["reviewActive"] == self.review_active
+                        and payload["reviewVerdict"] == self.review_verdict
                     )
-                valid = (
+                )
+                claims_match = payload["taskMatches"] == task_matches
+                valid_shape = (
                     bool(payload["planPath"])
                     and payload["planPath"].startswith("/")
                     and payload["planExists"]
                     and task_matches
+                    and plan_matches
+                    and phase_matches
+                    and review_matches
+                    and claims_match
                     and (
                         (
                             payload["phase"] == "execute"
@@ -640,19 +688,37 @@ class Replayer:
                         )
                     )
                 )
-                self.task = payload["task"]
-                self.plan_path = payload["planPath"]
-                self.phase = payload["phase"]
-                self.review_active = payload["reviewActive"]
-                self.review_verdict = payload["reviewVerdict"]
-                self.state_bound = True
-                if not valid:
+                if not valid_shape:
                     self.unresolved_binding = True
+                    if not claims_match and self.task is not None:
+                        result.violations.append(
+                            f"seq {event['seq']}: auto-resume taskMatches does not "
+                            "match the persisted task"
+                        )
+                    if not (
+                        task_matches
+                        and plan_matches
+                        and phase_matches
+                        and review_matches
+                    ):
+                        result.violations.append(
+                            f"seq {event['seq']}: auto-resume attempted to replace "
+                            "the persisted task/plan/phase/review binding"
+                        )
                     result.notes.append(
                         f"seq {event['seq']}: auto-resume refused; "
                         "state is not a validated in-progress loop"
                     )
                 else:
+                    self.gate = "pending"
+                    self.grant_turn = None
+                    self.grant_pre_turn = False
+                    self.task = payload["task"]
+                    self.plan_path = payload["planPath"]
+                    self.phase = payload["phase"]
+                    self.review_active = payload["reviewActive"]
+                    self.review_verdict = payload["reviewVerdict"]
+                    self.state_bound = True
                     self.unresolved_binding = False
                     result.notes.append(
                         f"seq {event['seq']}: validated auto-resume for "
@@ -670,7 +736,13 @@ class Replayer:
                     )
             elif etype == "orchestration.ownership":
                 snapshot = _snapshot_from_payload(payload)
-                ownership_transition_valid = not self.state_bound or (
+                initial_observation_valid = (
+                    not self.state_bound
+                    and (self.task is None or payload["task"] == self.task)
+                    and (not self.plan_path or payload["planPath"] == self.plan_path)
+                    and (not self.phase or payload["phase"] == self.phase)
+                )
+                ownership_transition_valid = initial_observation_valid or (
                     payload["status"] == self.ownership
                     and payload["sessionId"] == self.owner_session
                     and payload["transferFrom"] == self.transfer_from
@@ -689,7 +761,7 @@ class Replayer:
                 if not ownership_transition_valid:
                     result.violations.append(
                         f"seq {event['seq']}: ownership transition does not "
-                        "match the persisted state or authorized transfer"
+                        "match the persisted task/plan/phase state or authorized transfer"
                     )
                     continue
                 if self.state_bound and not self._snapshot_matches(snapshot):
@@ -814,6 +886,46 @@ class Replayer:
                         f"seq {event['seq']}: resume did not preserve pending "
                         "approval/review requirements"
                     )
+            elif etype == "review.provenance":
+                same_round = payload["round"] == self.review_round
+                if not same_round:
+                    result.violations.append(
+                        f"seq {event['seq']}: provenance must stay in the "
+                        "same review round"
+                    )
+                elif not self.dispatch_tool_call_id:
+                    self.provenance_round = payload["round"]
+                    self.dispatch_tool_call_id = payload["dispatchToolCallId"]
+                    self.reviewer_agent_id = payload["reviewerAgentId"]
+                    result.notes.append(
+                        f"seq {event['seq']}: recorded initial dispatch/reviewer "
+                        "provenance"
+                    )
+                elif self.recovery_status != "reconciliation_retrying":
+                    if (
+                        payload["dispatchToolCallId"] != self.dispatch_tool_call_id
+                        or payload["reviewerAgentId"] != self.reviewer_agent_id
+                    ):
+                        result.violations.append(
+                            f"seq {event['seq']}: new provenance requires the "
+                            "authorized same-round retry transition"
+                        )
+                elif (
+                    payload["dispatchToolCallId"] == self.dispatch_tool_call_id
+                    and payload["reviewerAgentId"] == self.reviewer_agent_id
+                ):
+                    result.violations.append(
+                        f"seq {event['seq']}: same-round retry must replace the "
+                        "failed dispatch and reviewer provenance"
+                    )
+                else:
+                    self.provenance_round = payload["round"]
+                    self.dispatch_tool_call_id = payload["dispatchToolCallId"]
+                    self.reviewer_agent_id = payload["reviewerAgentId"]
+                    result.notes.append(
+                        f"seq {event['seq']}: replaced failed dispatch/reviewer "
+                        "provenance for the bounded retry"
+                    )
             elif etype == "review.reconciliation":
                 snapshot = _snapshot_from_payload(payload)
                 transition_valid = True
@@ -881,6 +993,13 @@ class Replayer:
                             f"seq {event['seq']}: recovery state cannot mutate "
                             "into a verdict without authorized re-arm"
                         )
+                    if self.review_active and not payload["active"]:
+                        transition_valid = False
+                        result.violations.append(
+                            f"seq {event['seq']}: reconciliation cannot deactivate "
+                            "an active pending review without a verdict or "
+                            "explicit exhausted recovery"
+                        )
                 if transition_valid:
                     self.recovery_status = payload["status"]
                     self.recovery_attempts = payload["attempts"]
@@ -916,6 +1035,12 @@ class Replayer:
         result.review_history = deepcopy(self.review_history)
         result.base_sha = self.base_sha
         result.head_sha = self.head_sha
+        result.task = self.task
+        result.plan_path = self.plan_path
+        result.phase = self.phase
+        result.provenance_round = self.provenance_round
+        result.dispatch_tool_call_id = self.dispatch_tool_call_id
+        result.reviewer_agent_id = self.reviewer_agent_id
 
         if result.violations:
             result.verdict = Verdict.VIOLATION
@@ -1088,6 +1213,30 @@ EXPECTED = {
         Verdict.VIOLATION,
         "ownership cannot mutate the carried approval, review, nonce, history, or SHA snapshot",
     ),
+    "reconciliation-deactivation-without-verdict.jsonl": (
+        Verdict.VIOLATION,
+        "an active pending review cannot be deactivated without a verdict or exhaustion",
+    ),
+    "auto-resume-binding-overwrite.jsonl": (
+        Verdict.VIOLATION,
+        "auto-resume cannot replace a persisted plan or review binding",
+    ),
+    "task-start-binding-overwrite.jsonl": (
+        Verdict.VIOLATION,
+        "ownership observation cannot replace the task recorded by task_start",
+    ),
+    "same-round-retry-provenance-success.jsonl": (
+        Verdict.OK,
+        "a same-round retry replaces failed dispatch and reviewer provenance",
+    ),
+    "same-round-retry-provenance-rejected.jsonl": (
+        Verdict.VIOLATION,
+        "a cross-round retry provenance observation is rejected",
+    ),
+    "same-round-retry-provenance-exhausted.jsonl": (
+        Verdict.OK,
+        "retry exhaustion preserves the failed provenance and no-verdict state",
+    ),
 }
 
 
@@ -1209,6 +1358,77 @@ def check_resume_semantics(name: str, result: ReplayResult) -> str | None:
     if name == "snapshot-mutation-transfer.jsonl":
         if not any("nonce/history/SHA snapshot" in violation for violation in result.violations):
             return "snapshot mutation was not rejected"
+    if name == "reconciliation-deactivation-without-verdict.jsonl":
+        if (
+            not result.review_active
+            or result.recovery_status != "none"
+            or not any("deactivate" in violation for violation in result.violations)
+        ):
+            return "active pending review was deactivated without a permitted transition"
+    if name == "auto-resume-binding-overwrite.jsonl":
+        if (
+            result.task != "review task"
+            or result.plan_path != "/repo/plan.md"
+            or result.phase != "execute"
+            or result.review_active
+            or result.review_verdict != "PENDING"
+            or not any("persisted task/plan/phase/review" in violation for violation in result.violations)
+        ):
+            return "auto-resume binding overwrite was not rejected before mutation"
+    if name == "task-start-binding-overwrite.jsonl":
+        if (
+            result.task != "recorded task"
+            or result.plan_path
+            or result.phase != "research"
+            or result.ownership != "unowned"
+            or not any("persisted task/plan/phase" in violation for violation in result.violations)
+        ):
+            return "task_start binding was overwritten by initial ownership observation"
+    if name == "same-round-retry-provenance-success.jsonl":
+        if (
+            result.recovery_status != "reconciliation_retrying"
+            or result.recovery_attempts != 1
+            or result.review_round != 1
+            or result.review_nonce != "a1b2c3d4"
+            or result.review_history != [
+                {"round": 1, "verdict": "FIX-FIRST", "critical_high": 1, "advisory": 0}
+            ]
+            or result.base_sha != "base-sha"
+            or result.head_sha != "head-sha"
+            or result.gate != "pending"
+            or result.ownership != "owned"
+            or result.owner_session != "owner-a"
+            or result.dispatch_tool_call_id != "call-retry"
+            or result.reviewer_agent_id != "agent-retry"
+            or not any("replaced" in note for note in result.notes)
+        ):
+            return "successful retry did not replace only the failed provenance"
+    if name == "same-round-retry-provenance-rejected.jsonl":
+        if (
+            result.dispatch_tool_call_id != "call-failed"
+            or result.reviewer_agent_id != "agent-failed"
+            or not any("same review round" in violation for violation in result.violations)
+        ):
+            return "cross-round provenance rejection did not preserve failed identities"
+    if name == "same-round-retry-provenance-exhausted.jsonl":
+        if (
+            result.recovery_status != "reconciliation_exhausted"
+            or result.recovery_attempts != 1
+            or result.review_active
+            or result.review_verdict != "PENDING"
+            or result.review_nonce != "a1b2c3d4"
+            or result.review_history != [
+                {"round": 1, "verdict": "FIX-FIRST", "critical_high": 1, "advisory": 0}
+            ]
+            or result.base_sha != "base-sha"
+            or result.head_sha != "head-sha"
+            or result.gate != "pending"
+            or result.ownership != "owned"
+            or result.owner_session != "owner-a"
+            or result.dispatch_tool_call_id != "call-failed"
+            or result.reviewer_agent_id != "agent-failed"
+        ):
+            return "exhaustion did not preserve bounded no-verdict state and provenance"
     return None
 
 

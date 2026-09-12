@@ -1,0 +1,2 @@
+{"seq":1,"type":"orchestration.ownership","payload":{"status":"owned","sessionId":"owner-a","transferFrom":"","task":"review task","planPath":"/repo/plan.md","phase":"review"}}
+{"seq":2,"type":"review.reconciliation","payload":{"status":"none","attempts":0,"round":1,"marker":"","active":false,"verdict":"PENDING"}}

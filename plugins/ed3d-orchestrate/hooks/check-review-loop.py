@@ -216,6 +216,71 @@ def _provenance_status(review):
     return "valid"
 
 
+def _process_reconcile_event(event, dispatch_id, reviewer_id, nonce, state):
+    """Consume one event while keeping only bounded reconciliation state."""
+    event_type = event.get("type")
+    if event_type == "assistant.message":
+        agent_id = event.get("agentId")
+        if agent_id is None:
+            count = _expected_tool_call_count(event, dispatch_id)
+            if count:
+                observations = state["assistant_dispatch_observations"]
+                if count > 1 or observations + count > 1:
+                    state["candidate_invalid"] = True
+                state["assistant_dispatch_observations"] = min(
+                    2, observations + count
+                )
+        elif agent_id == reviewer_id:
+            data = event.get("data")
+            content = data.get("content") if isinstance(data, dict) else None
+            if state["candidate_started"] and not state["candidate_completed"]:
+                state["latest_verdict"] = _terminal_verdict(content, nonce)
+            elif state["candidate_completed"]:
+                state["candidate_invalid"] = True
+    elif event_type == "tool.execution_start":
+        tool_call_id = _data_tool_call_id(event)
+        if tool_call_id == dispatch_id:
+            if state["start_dispatch_observations"]:
+                state["candidate_invalid"] = True
+            state["start_dispatch_observations"] = min(
+                2, state["start_dispatch_observations"] + 1
+            )
+    elif event_type == "subagent.started":
+        tool_call_id = _data_tool_call_id(event)
+        agent_id = event.get("agentId")
+        data = event.get("data")
+        agent_name = data.get("agentName") if isinstance(data, dict) else None
+        if tool_call_id == dispatch_id:
+            if state["candidate_started"]:
+                state["candidate_invalid"] = True
+            if (
+                (
+                    state["assistant_dispatch_observations"]
+                    or state["start_dispatch_observations"]
+                )
+                and agent_id == reviewer_id
+                and agent_name in ADVERSARY_NAMES
+            ):
+                state["candidate_started"] = True
+            else:
+                state["candidate_invalid"] = True
+        elif (
+            state["candidate_started"]
+            and agent_name in ADVERSARY_NAMES
+            and isinstance(tool_call_id, str)
+        ):
+            # Only a second adversary dispatch competes with the current
+            # reviewer. Ordinary parent/child tools are unrelated activity.
+            state["candidate_invalid"] = True
+    elif event_type == "subagent.completed":
+        tool_call_id = _data_tool_call_id(event)
+        agent_id = event.get("agentId")
+        if tool_call_id == dispatch_id and agent_id == reviewer_id:
+            if state["candidate_completed"] or not state["candidate_started"]:
+                state["candidate_invalid"] = True
+            state["candidate_completed"] = True
+
+
 def reconcile_transcript(path, review):
     """Return ``SHIP``/``FIX-FIRST``, ``unavailable``, or ``None``.
 
@@ -235,95 +300,48 @@ def reconcile_transcript(path, review):
     if not path or not os.path.isfile(path):
         return "unavailable"
 
-    assistant_dispatch_observations = 0
-    start_dispatch_observations = 0
-    candidate_started = False
-    candidate_completed = False
-    candidate_invalid = False
-    latest_verdict = None
+    state = {
+        "assistant_dispatch_observations": 0,
+        "start_dispatch_observations": 0,
+        "candidate_started": False,
+        "candidate_completed": False,
+        "candidate_invalid": False,
+        "latest_verdict": None,
+    }
 
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as handle:
             for raw_line in handle:
+                event = None
                 try:
                     event = json.loads(raw_line)
                 except Exception:
+                    raw_line = ""
                     continue
                 if not isinstance(event, dict):
+                    del event
+                    raw_line = ""
                     continue
-                event_type = event.get("type")
-                if event_type == "assistant.message":
-                    agent_id = event.get("agentId")
-                    if agent_id is None:
-                        count = _expected_tool_call_count(event, dispatch_id)
-                        if count:
-                            if assistant_dispatch_observations:
-                                candidate_invalid = True
-                            assistant_dispatch_observations = min(
-                                2, assistant_dispatch_observations + count
-                            )
-                    elif agent_id == reviewer_id:
-                        data = event.get("data")
-                        content = data.get("content") if isinstance(data, dict) else None
-                        if candidate_started and not candidate_completed:
-                            latest_verdict = _terminal_verdict(content, nonce)
-                        elif candidate_completed:
-                            candidate_invalid = True
-                elif event_type == "tool.execution_start":
-                    tool_call_id = _data_tool_call_id(event)
-                    if tool_call_id == dispatch_id:
-                        if start_dispatch_observations:
-                            candidate_invalid = True
-                        start_dispatch_observations = min(
-                            2, start_dispatch_observations + 1
-                        )
-                elif event_type == "subagent.started":
-                    tool_call_id = _data_tool_call_id(event)
-                    agent_id = event.get("agentId")
-                    data = event.get("data")
-                    agent_name = data.get("agentName") if isinstance(data, dict) else None
-                    if tool_call_id == dispatch_id:
-                        if candidate_started:
-                            candidate_invalid = True
-                        if (
-                            (
-                                assistant_dispatch_observations
-                                or start_dispatch_observations
-                            )
-                            and agent_id == reviewer_id
-                            and agent_name in ADVERSARY_NAMES
-                        ):
-                            candidate_started = True
-                        else:
-                            candidate_invalid = True
-                    elif (
-                        candidate_started
-                        and agent_name in ADVERSARY_NAMES
-                        and isinstance(tool_call_id, str)
-                    ):
-                        # Only a second adversary dispatch competes with the
-                        # current reviewer.  Ordinary parent/child tools are
-                        # unrelated transcript activity and must not poison a
-                        # genuine completion chain.
-                        candidate_invalid = True
-                elif event_type == "subagent.completed":
-                    tool_call_id = _data_tool_call_id(event)
-                    agent_id = event.get("agentId")
-                    if tool_call_id == dispatch_id and agent_id == reviewer_id:
-                        if candidate_completed or not candidate_started:
-                            candidate_invalid = True
-                        candidate_completed = True
+                _process_reconcile_event(
+                    event, dispatch_id, reviewer_id, nonce, state
+                )
+                del event
+                raw_line = ""
     except Exception:
         return "unavailable"
 
     if (
-        candidate_started
-        and candidate_completed
-        and not candidate_invalid
-        and latest_verdict in {"SHIP", "FIX-FIRST"}
+        state["candidate_started"]
+        and state["candidate_completed"]
+        and not state["candidate_invalid"]
+        and state["latest_verdict"] in {"SHIP", "FIX-FIRST"}
     ):
-        return latest_verdict
-    if candidate_started and not candidate_completed and not candidate_invalid:
+        return state["latest_verdict"]
+    if (
+        state["candidate_started"]
+        and not state["candidate_completed"]
+        and not state["candidate_invalid"]
+    ):
         return None
     return "unavailable"
 

@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """Standalone zero-dependency tests for check-review-loop.py."""
+import gc
+import importlib.util
+import inspect
 import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import tracemalloc
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOK = os.path.join(HERE, "check-review-loop.py")
@@ -168,6 +172,27 @@ def duplicate_dispatch_observation(transcript, event_type):
             lines.insert(index + 1, line)
             break
     return "\n".join(lines) + "\n"
+
+
+def duplicate_request_in_single_message(transcript):
+    lines = transcript.splitlines()
+    for index, line in enumerate(lines):
+        event = json.loads(line)
+        if event.get("type") != "assistant.message" or "agentId" in event:
+            continue
+        requests = event.get("data", {}).get("toolRequests", [])
+        requests.append(dict(requests[0]))
+        event["data"]["toolRequests"] = requests
+        lines[index] = json.dumps(event)
+        return "\n".join(lines) + "\n"
+    raise AssertionError("dispatch request record not found")
+
+
+def load_hook_module():
+    spec = importlib.util.spec_from_file_location("check_review_loop", HOOK)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def reason_ok(decision, expected, needle=None):
@@ -357,6 +382,16 @@ def main():
         out,
     )
     shutil.rmtree(root, ignore_errors=True)
+    duplicate_request_same_record = duplicate_request_in_single_message(genuine)
+    root, _, _, out, decision = run(
+        lineage_state(provenance=provenance), duplicate_request_same_record
+    )
+    check(
+        "duplicate matching requests in one assistant.message -> unavailable owner block",
+        reason_ok(decision, "block", "review-reconciliation-unavailable"),
+        out,
+    )
+    shutil.rmtree(root, ignore_errors=True)
     duplicate_start = duplicate_dispatch_observation(genuine, "tool.execution_start")
     root, _, _, out, decision = run(lineage_state(provenance=provenance), duplicate_start)
     check(
@@ -499,6 +534,54 @@ def main():
     root, _, _, out, decision = run(lineage_state(provenance=provenance), large_prefix + genuine)
     check("streamed lineage beyond 256 KiB -> reconciliation block", reason_ok(decision, "block", "nonce-tagged SHIP verdict marker"), out)
     shutil.rmtree(root, ignore_errors=True)
+
+    print("bounded retained reconciliation state")
+    large_content = "review body " + ("x" * (2 * 1024 * 1024))
+    large_transcript = lineage_transcript(content_prefix=large_content)
+    large_transcript += json.dumps(
+        {"type": "session.usage_checkpoint", "data": {"totalTokens": 1}}
+    ) + "\n"
+    root = tempfile.mkdtemp(prefix="ed3d-orchestrate-memory-")
+    transcript_path = os.path.join(root, "transcript.jsonl")
+    with open(transcript_path, "w", encoding="utf-8") as handle:
+        handle.write(large_transcript)
+    del large_content
+    del large_transcript
+    gc.collect()
+    hook_module = load_hook_module()
+    retained_frame_sizes = []
+    original_data_tool_call_id = hook_module._data_tool_call_id
+
+    def observe_frame(event):
+        frame = inspect.currentframe().f_back
+        sizes = []
+        content = frame.f_locals.get("content")
+        if isinstance(content, str):
+            sizes.append(len(content))
+        data = frame.f_locals.get("data")
+        if isinstance(data, dict) and isinstance(data.get("content"), str):
+            sizes.append(len(data["content"]))
+        retained_frame_sizes.append(max(sizes, default=0))
+        return original_data_tool_call_id(event)
+
+    hook_module._data_tool_call_id = observe_frame
+    tracemalloc.start()
+    reconciliation = hook_module.reconcile_transcript(
+        transcript_path, lineage_state(provenance=provenance)["review"]
+    )
+    gc.collect()
+    retained, _ = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    check(
+        "large reviewer content is released after later records",
+        reconciliation == "SHIP"
+        and retained < 512 * 1024
+        and max(retained_frame_sizes, default=0) < 512 * 1024,
+        "reconciliation=%r retained=%d frame=%d"
+        % (reconciliation, retained, max(retained_frame_sizes, default=0)),
+    )
+    shutil.rmtree(root, ignore_errors=True)
+
     unrelated_prefix = "".join(
         json.dumps(
             {

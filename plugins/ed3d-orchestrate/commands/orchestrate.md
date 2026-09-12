@@ -120,9 +120,12 @@ round. First persist `review.recovery` as
 `status: reconciliation_retrying`, `attempts: 1`,
 `marker: review-reconciliation-unavailable`, then emit the sole retry
 dispatch. Preserve that block, the round, nonce, history, SHAs, approval,
-provenance, and ownership across the retry's dispatch, continuation, and
-authorized transfer. A retry may not clear the marker or return attempts to
-zero. If the retry is unavailable again, atomically persist
+and ownership across the retry's dispatch, continuation, and authorized
+transfer. Do not preserve failed dispatch/reviewer provenance: clear only
+`review.provenance` before the retry, then replace it with the new observed
+dispatch tool-call ID and reviewer agent ID from that retry's parent
+dispatch/start pair. A retry may not clear the recovery marker or return
+attempts to zero. If the retry is unavailable again, atomically persist
 `reconciliation_exhausted`, `attempts: 1`, `review.active: false`, and
 `review.verdict: PENDING`.
 
