@@ -391,6 +391,7 @@ class Replayer:
         self.provenance_round = None
         self.dispatch_tool_call_id = ""
         self.reviewer_agent_id = ""
+        self.provenance_retry_consumed = False
         self.state_bound = False
         self.rearm_authorized = False
         self._builders = {}  # toolCallId -> task number (dispatched, uncorrelated yet)
@@ -437,6 +438,7 @@ class Replayer:
         self.review_history = deepcopy(review["history"])
         self.base_sha = review["baseSha"]
         self.head_sha = review["headSha"]
+        self.provenance_retry_consumed = False
         recovery = review["recovery"]
         self.recovery_status = recovery["status"]
         self.recovery_attempts = recovery["attempts"]
@@ -607,6 +609,7 @@ class Replayer:
                 self.provenance_round = None
                 self.dispatch_tool_call_id = ""
                 self.reviewer_agent_id = ""
+                self.provenance_retry_consumed = False
                 result.notes.append(
                     f"seq {event['seq']}: new loop {payload['loop']} reset "
                     "gate to pending"
@@ -637,6 +640,7 @@ class Replayer:
                 self.provenance_round = None
                 self.dispatch_tool_call_id = ""
                 self.reviewer_agent_id = ""
+                self.provenance_retry_consumed = False
                 self.state_bound = False
                 result.notes.append(
                     f"seq {event['seq']}: task start reset control-plane state "
@@ -849,6 +853,7 @@ class Replayer:
                         self.rearm_authorized = True
                         self.recovery_status = "none"
                         self.recovery_attempts = 0
+                        self.provenance_retry_consumed = False
                     result.notes.append(
                         f"seq {event['seq']}: same-owner continuation preserved "
                         "approval and review requirements"
@@ -897,6 +902,7 @@ class Replayer:
                     self.provenance_round = payload["round"]
                     self.dispatch_tool_call_id = payload["dispatchToolCallId"]
                     self.reviewer_agent_id = payload["reviewerAgentId"]
+                    self.provenance_retry_consumed = False
                     result.notes.append(
                         f"seq {event['seq']}: recorded initial dispatch/reviewer "
                         "provenance"
@@ -914,14 +920,34 @@ class Replayer:
                     payload["dispatchToolCallId"] == self.dispatch_tool_call_id
                     and payload["reviewerAgentId"] == self.reviewer_agent_id
                 ):
+                    if self.provenance_retry_consumed:
+                        result.notes.append(
+                            f"seq {event['seq']}: observed already accepted "
+                            "same-round retry provenance idempotently"
+                        )
+                    else:
+                        result.violations.append(
+                            f"seq {event['seq']}: same-round retry must replace "
+                            "both failed dispatch and reviewer provenance"
+                        )
+                elif (
+                    payload["dispatchToolCallId"] == self.dispatch_tool_call_id
+                    or payload["reviewerAgentId"] == self.reviewer_agent_id
+                ):
                     result.violations.append(
-                        f"seq {event['seq']}: same-round retry must replace the "
+                        f"seq {event['seq']}: same-round retry must replace both "
                         "failed dispatch and reviewer provenance"
+                    )
+                elif self.provenance_retry_consumed:
+                    result.violations.append(
+                        f"seq {event['seq']}: same-round retry provenance "
+                        "replacement authorization was already consumed"
                     )
                 else:
                     self.provenance_round = payload["round"]
                     self.dispatch_tool_call_id = payload["dispatchToolCallId"]
                     self.reviewer_agent_id = payload["reviewerAgentId"]
+                    self.provenance_retry_consumed = True
                     result.notes.append(
                         f"seq {event['seq']}: replaced failed dispatch/reviewer "
                         "provenance for the bounded retry"
@@ -1237,6 +1263,26 @@ EXPECTED = {
         Verdict.OK,
         "retry exhaustion preserves the failed provenance and no-verdict state",
     ),
+    "same-round-retry-provenance-partial-dispatch.jsonl": (
+        Verdict.VIOLATION,
+        "a retry retaining the failed dispatch identity is rejected",
+    ),
+    "same-round-retry-provenance-partial-reviewer.jsonl": (
+        Verdict.VIOLATION,
+        "a retry retaining the failed reviewer identity is rejected",
+    ),
+    "same-round-retry-provenance-repeated.jsonl": (
+        Verdict.VIOLATION,
+        "a same-round provenance replacement is single-use with idempotent repeats",
+    ),
+    "same-round-retry-provenance-new-round.jsonl": (
+        Verdict.OK,
+        "a new review round receives a fresh provenance replacement authorization",
+    ),
+    "same-round-retry-provenance-rearm.jsonl": (
+        Verdict.OK,
+        "an authorized exhausted-recovery re-arm permits one fresh replacement",
+    ),
 }
 
 
@@ -1429,6 +1475,54 @@ def check_resume_semantics(name: str, result: ReplayResult) -> str | None:
             or result.reviewer_agent_id != "agent-failed"
         ):
             return "exhaustion did not preserve bounded no-verdict state and provenance"
+    if name in {
+        "same-round-retry-provenance-partial-dispatch.jsonl",
+        "same-round-retry-provenance-partial-reviewer.jsonl",
+    }:
+        if (
+            result.recovery_status != "reconciliation_retrying"
+            or result.recovery_attempts != 1
+            or not result.review_active
+            or result.review_verdict != "PENDING"
+            or result.review_nonce != "a1b2c3d4"
+            or result.review_history != [
+                {"round": 1, "verdict": "FIX-FIRST", "critical_high": 1, "advisory": 0}
+            ]
+            or result.base_sha != "base-sha"
+            or result.head_sha != "head-sha"
+            or result.dispatch_tool_call_id != "call-failed"
+            or result.reviewer_agent_id != "agent-failed"
+            or not any("both" in violation for violation in result.violations)
+        ):
+            return "partial provenance replacement mutated accepted or protected state"
+    if name == "same-round-retry-provenance-repeated.jsonl":
+        if (
+            result.recovery_status != "reconciliation_retrying"
+            or result.recovery_attempts != 1
+            or result.dispatch_tool_call_id != "call-retry"
+            or result.reviewer_agent_id != "agent-retry"
+            or len(result.violations) != 2
+            or not any("already consumed" in violation for violation in result.violations)
+        ):
+            return "repeated provenance replacement was not single-use or idempotent"
+    if name == "same-round-retry-provenance-new-round.jsonl":
+        if (
+            result.review_round != 2
+            or result.provenance_round != 2
+            or result.dispatch_tool_call_id != "call-round-2-retry"
+            or result.reviewer_agent_id != "agent-round-2-retry"
+            or result.recovery_status != "reconciliation_retrying"
+        ):
+            return "new review round did not receive fresh replacement authorization"
+    if name == "same-round-retry-provenance-rearm.jsonl":
+        if (
+            result.recovery_status != "reconciliation_retrying"
+            or result.recovery_attempts != 1
+            or result.dispatch_tool_call_id != "call-retry"
+            or result.reviewer_agent_id != "agent-retry"
+            or result.recovery_status == "reconciliation_exhausted"
+        ):
+            return "authorized exhausted-recovery re-arm did not permit one replacement"
     return None
 
 
