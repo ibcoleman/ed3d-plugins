@@ -1,5 +1,18 @@
 # Changelog
 
+## [ed3d-orchestrate] [0.6.0]
+
+Hardens review-loop isolation, provenance-aware reconciliation, and bounded recovery for GitHub Copilot CLI.
+
+**Changed:**
+- Parent `agentStop`/`Stop` enforcement is scoped to the persisted owner session, while unrelated parent stop events allow without state mutation.
+- Reviewer reconciliation requires current dispatch/reviewer lineage and exact nonce-tagged verdict evidence.
+- Same-owner continuation, authorized transfer, legacy recovery, and exhausted no-verdict recovery are explicit and bounded.
+
+**Fixed:**
+- Prevented stale, quoted, tool-result, duplicate, partial, and repeated provenance evidence from being treated as a current review result.
+- Retained review-wide child write enforcement because the observed `preToolUse` payload lacks a parent owner field; this release does not claim complete cross-session isolation.
+
 ## [ed3d-orchestrate] [0.5.0]
 
 Migration/release documentation and the enforcement-branch decision: the plan-review → builder handoff gate ships as **protocol-only** (Branch B). A mechanical builder-gate slice (Branch A) is rejected pending validated native builder-dispatch evidence.
