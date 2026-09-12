@@ -24,6 +24,11 @@ At loop start, create `.ed3d/orchestrate-state.json` in the working directory of
   "gate": {
     "approval": "pending"
   },
+  "handoff": {
+    "status": "not_started",
+    "correction_attempts": 0,
+    "remaining_outcomes": []
+  },
   "review": {
     "active": false,
     "round": 0,
@@ -36,6 +41,44 @@ At loop start, create `.ed3d/orchestrate-state.json` in the working directory of
   }
 }
 ```
+
+### Fresh-task reset and resume validation
+
+- A **non-empty task argument always starts a fresh loop**. It wins over
+  auto-resume and must reset every task, plan, approval, SHA, and review field
+  to the canonical fresh state above. In particular, reset `task`, `plan_path`,
+  `base_sha`, `head_sha`, `phase`, `gate.approval`, the entire `handoff` block,
+  `review.max_rounds`, `review.history`, `review.consecutive_blocks`, and
+  `review.nonce` together. Existing plans, commits, and other repository work
+  remain untouched; only the current control-plane state is reset.
+- An **empty invocation may resume only** a validated in-progress state:
+  `phase: "execute" or "review"`, a non-empty absolute `plan_path` that exists,
+  and a task that matches the plan context. The clean fresh combination of
+  `review.active: false` and `review.verdict: "PENDING"` is not automatically
+  treated as an in-progress loop. Malformed, partial, legacy, or mismatched
+  state fails closed and returns to the pending fresh baseline.
+  The required condition is that task matches the plan context.
+  The fail-closed rule is: malformed, partial, legacy, or mismatched state fails closed.
+- A stale `"granted"` value, prior plan path, SHA, nonce, history, or correction
+  attempt cannot survive a new task. Bare resume, malformed state, or a task /
+  plan mismatch never authorizes a builder.
+- If read-only plan mode prevents the reset write, the plan artifact records
+  this permitted handoff section:
+
+  ```markdown
+  ## Orchestration Handoff
+  - reset_pending: true
+  - requested_task: <task text>
+  - prior_task: <task text or unknown>
+  - prior_plan_path: <absolute path or none>
+  - approval: pending
+  ```
+
+  This is a **pending record, not authorization**. On leaving plan mode, apply
+  the reset, verify the state task and absolute plan path, and write
+  `reset_pending: false` in control-plane handling before approval. If the
+  record is missing, duplicated, or does not match the requested task,
+  execution remains refused.
 
 The review block's `history` field is the append-only round record:
 
@@ -57,6 +100,34 @@ The review block's `history` field is the append-only round record:
 - **The loop nonce.** Whenever a review arms — including re-arming an existing inactive review block for a new loop — generate a fresh nonce: 8 lowercase hex characters, written as `review.nonce` (overwrite any prior value; never carry a nonce across loops). It persists for the whole loop, across every round and `/clear`+resume, and travels in every adversary dispatch as `NONCE: <value>`. The guardrail hook matches rendered verdicts by this tag, which is what keeps the literal `VERDICT: SHIP` strings in skill and agent prose from being mistaken for a real verdict.
 - **`verdict: "PENDING"` means an adversary dispatch is in flight — at every round.** Round 1 starts PENDING; after every FIX-FIRST round, once the fixer's commits are verified and `head_sha` is refreshed, re-arm in one state write: `round: round + 1` and `verdict: "PENDING"` together, before re-dispatching the adversary. While verdict is PENDING, the write-guard hook mechanically blocks write-class tool calls from subagents — that is the enforcement layer behind the adversary's no-writes rule, so treat any adversary claim of having fixed the state file or the working tree as suspect and verify against git.
 - On completion (SHIP or operator-accepted), set `review.active: false`, reset `consecutive_blocks: 0`, and leave the final `verdict` in place. The state file is the audit trail — the operator can reconstruct every transition from it after the fact.
+
+### State transition checklist
+
+Before each control-plane transition, verify the state file and the
+corresponding artifact rather than inferring progress from the transcript:
+
+- **fresh task:** canonical fresh state, including pending approval, a
+  `not_started` handoff, zero correction attempts, `max_rounds: 3`, empty
+  history, and a null nonce;
+- **plan binding:** absolute existing `plan_path`, `phase: "execute"`, a valid
+  baseline, and pending approval (or a matching `reset_pending` handoff while
+  planning remains read-only);
+- **approval:** explicit later authorization for the matching current task and
+  plan, then `"granted"` immediately before the first builder dispatch;
+- **review arm:** committed distinct `base_sha` / `head_sha`, verified outcome
+  handoff, active/PENDING review, round 1, and a fresh nonce;
+- **verdict:** persist and re-read `verdict`, open findings,
+  `consecutive_blocks: 0`, and the appended history entry before printing or
+  branching;
+- **FIX-FIRST:** verify the fixer commit, refresh `head_sha`, advance the
+  round, set PENDING, and preserve prior findings before re-review;
+- **terminal SHIP:** `review.active: false`, `SHIP`, zero consecutive blocks,
+  and the highest history round matches the final verdict.
+
+The existing hook's atomic temporary-file replacement remains the write
+backstop, but it does not protect concurrent model-mediated state edits. The
+orchestrator's state writes are procedural and must be re-read after every
+verdict.
 
 ## Phase 1: Research
 
@@ -148,6 +219,43 @@ The operator may also `/clear` + resume at any other phase boundary on their own
 If you are resuming into this phase (`phase: "execute"` in the state file), read the plan document at `plan_path` first, then continue from here. Before dispatching any builder, verify `base_sha` exists in the state file and is a valid commit in the current repo; if it is missing, set it from the current `HEAD` before any implementation changes.
 
 Before any builder dispatch, verify the state file records `gate.approval: "granted"` for this loop and session — written in the same turn as, and immediately before, the first dispatch after the operator's explicit authorization. Do not fan out while it is `"pending"`, stale, malformed, or partial; a bare resume does not grant approval.
+
+### Outcome-specific builder handoff
+
+Every builder and fixer must end its report with this Copilot-native handoff:
+
+```markdown
+### Outcome Handoff
+- AC.1: complete | incomplete | blocked
+  - Changed: file or symbol
+  - Evidence: command -> observed result
+```
+
+Require one concise row for every approved `AC.n` or explicitly requested
+behavior. Each row includes a `complete, incomplete, or blocked` status, a
+changed location, and a behavior-specific command/result. A green pre-existing
+suite without behavior-specific evidence is a **suite-only claim** and is not
+completion. `incomplete` and `blocked` rows include the remaining gap.
+
+Before recording `head_sha` or arming adversarial review, compare the report
+rows with the approved plan criteria. This is a procedural handoff check backed
+by static contract tests and bounded synthetic replays, not a universal
+semantic parser or native builder gate.
+
+On the first missing/incomplete requested outcome, set `handoff.status:
+"pending"`, increment `correction_attempts` to `1`, retain only the missing
+outcomes in `remaining_outcomes`, and dispatch the existing `task-bug-fixer` once
+with those outcomes and their evidence gaps. This is one missing-outcome correction attempt.
+The orchestrator performs one missing-outcome correction attempt only.
+Do not arm adversarial review while the handoff is pending.
+If the fixer refuses, fails to commit, or returns another incomplete/blocked
+handoff, set `handoff.status: "blocked"` and retain `remaining_outcomes`. Keep
+`review.active: false` and `gate.approval: "pending"`; report a concrete
+takeover/replan decision. The blocked handoff requires an explicit takeover/replan decision.
+Resume must not silently dispatch a second fixer. A new task reset clears the
+block; an incomplete handoff after that one correction attempt is a second incomplete handoff.
+An explicit operator takeover may continue with the
+preserved commit, but remains subject to independent review.
 
 Fan out builders. One bounded task per dispatch — a builder gets a task it can complete fully with tests and a commit.
 

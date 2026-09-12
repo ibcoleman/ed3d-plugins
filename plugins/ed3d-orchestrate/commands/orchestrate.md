@@ -9,7 +9,11 @@ argument-hint: "[task-description]"
 
 Before asking for a task, locate `.ed3d/orchestrate-state.json` with direct file reads only — never a search: inside a git repository, resolve the root with `git rev-parse --show-toplevel` and read `<root>/.ed3d/orchestrate-state.json`; outside one, check `.ed3d/orchestrate-state.json` in the current directory and, if absent, its immediate parent (only if still within the same project tree). Do not use recursive glob patterns or `find`-style searches, and never request access to directories outside the project — an unbounded walk-up prompts for `/` access (observed in 0.3.1's first live run).
 
-If `$1` is `resume`, or if `$1` is empty and the state file records an in-progress loop (`review.active` is true, or `review.verdict` is not `SHIP`):
+If `$1` is `resume`, or if `$1` is empty and the valid state file passes the
+validated in-progress checks (`phase: "execute" or "review"`, a non-empty
+absolute existing `plan_path`, and a task matching the plan context, while the
+clean `review.active: false` / `review.verdict: "PENDING"` combination is
+excluded):
 
 1. Read the state file, then `cd` to the repository root you resolved it from — `/clear` preserves the shell's working directory (a live resume once ran from `docs/`), so make every subsequent git command and state-file write root-relative.
 2. Report the recorded `task`, `phase`, `plan_path`, and review state to the operator in one short paragraph.
@@ -18,6 +22,60 @@ If `$1` is `resume`, or if `$1` is empty and the state file records an in-progre
 5. **Resume does not grant approval; a bare auto-resume is refused.** Resuming is not, by itself, authorization to dispatch builders. If the state file records `gate.approval: "pending"` (or the field is absent, malformed, or partial), do not dispatch any builder — present the operator approval checkpoint (reply **continue**) and wait for the explicit authorization to be processed. Only after that authorization is recorded as `gate.approval: "granted"` in the state file — written in the same turn, immediately before the first builder dispatch — may builders start. Resuming into `phase: "execute"` with approval still `"pending"` re-presents the checkpoint rather than rolling into dispatch.
 
 If `$1` is `resume` and no state file exists, say so and ask for the task. If `$1` is empty and no state file exists, ask the operator what they want accomplished before engaging the loop. If the state file records a completed loop (`review.active: false` and `review.verdict: "SHIP"`), report it as completed — task and round count from `review.history` — and ask for the new task instead of resuming.
+
+## Reset and resume safety
+
+- A **non-empty task argument always starts a fresh loop**. It never
+  auto-resumes. Reset every task, plan, approval, SHA, and review field before
+  planning: `task`, `plan_path`, `base_sha`, `head_sha`, `phase`,
+  `gate.approval`, the `handoff` block, `review.max_rounds`, history, counters,
+  and nonce. Existing plans and commits remain untouched; only the control
+  plane is reset.
+- An **empty invocation may resume only** when the state is valid and
+  in-progress: `phase: "execute" or "review"`, a non-empty absolute `plan_path` that exists,
+  and a task that matches the plan context. The clean fresh combination is
+  `review.active: false` and `review.verdict: "PENDING"`; it is not an
+  in-progress loop. Malformed, partial, legacy, or mismatched state fails closed
+  and returns to the pending fresh baseline. The fail-closed rule is:
+  malformed, partial, legacy, or mismatched state fails closed.
+  A resume is valid only when task matches the plan context; malformed, partial,
+  legacy, or mismatched state fails closed.
+- A prior task's grant, plan path, SHA, nonce, history, or correction attempt
+  cannot authorize a new task. A bare resume never grants approval.
+
+When read-only planning prevents the reset write, phase 2 writes only the
+plan.md artifact and records this permitted section in that artifact:
+
+```markdown
+## Orchestration Handoff
+- reset_pending: true
+- requested_task: <task text>
+- prior_task: <task text or unknown>
+- prior_plan_path: <absolute path or none>
+- approval: pending
+```
+
+This is a **pending record, not authorization**. After planning, apply and
+verify the reset against the task and absolute plan path, then change
+`reset_pending: false` in control-plane handling before the later approval
+write. If the record is missing, duplicated, or does not match, execution
+remains refused.
+
+Before any builder dispatch, the orchestrator checks the Copilot-native
+`### Outcome Handoff` rows for every approved `AC.n`: status
+(`complete, incomplete, or blocked`), changed location, and a
+behavior-specific command/result. A suite-only claim is not completion. The
+first missing outcome gets one correction attempt through the existing fixer;
+the second incomplete handoff is blocked and requires a concrete
+takeover/replan decision before independent review can arm.
+The second incomplete handoff requires an explicit takeover/replan decision;
+execution remains refused.
+
+State transitions use the existing state file and verdict checklist. The hook
+retains atomic temporary-file replacement, but that does not protect
+concurrent model-mediated state edits. A verdict must be persisted and
+re-read before it is reported; malformed state never becomes a fabricated
+verdict.
 
 ## Normal mode
 

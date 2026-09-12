@@ -131,6 +131,75 @@ def test_no_new_hook_or_duplicate_gate_claims_in_skill():
     assert "hooks.json" not in body
 
 
+def test_fresh_task_reset_and_validated_resume_are_explicit():
+    skill = text(SKILL)
+    command = text(COMMAND)
+    for body in (skill, command):
+        assert "non-empty task argument always starts a fresh loop" in body
+        assert "empty invocation may resume only" in body
+        assert 'phase: "execute" or "review"' in body
+        assert "non-empty absolute `plan_path` that exists" in body
+        assert "task matches the plan context" in body
+        assert "clean fresh combination" in body
+        assert "malformed, partial, legacy, or mismatched state fails closed" in body
+    assert '"handoff": {' in skill
+    assert '"status": "not_started"' in skill
+    assert '"correction_attempts": 0' in skill
+    assert '"remaining_outcomes": []' in skill
+    assert "reset every task, plan, approval, SHA, and review field" in skill
+
+
+def test_pending_reset_handoff_is_recorded_and_not_authorization():
+    skill = text(SKILL)
+    command = text(COMMAND)
+    for body in (skill, command):
+        assert "reset_pending: true" in body
+        assert "requested_task:" in body
+        assert "prior_task:" in body
+        assert "prior_plan_path:" in body
+        assert "approval: pending" in body
+        assert "pending record, not authorization" in body
+        assert "reset_pending: false" in body
+    assert "missing, duplicated, or does not match" in skill
+    assert "execution remains refused" in skill
+
+
+def test_outcome_handoff_is_verified_before_review_and_recovery_is_bounded():
+    body = text(SKILL)
+    assert "Outcome Handoff" in body
+    assert "one concise row for every approved `AC.n`" in body
+    assert "complete, incomplete, or blocked" in body
+    assert "changed location" in body
+    assert "behavior-specific command/result" in body
+    assert "Before recording `head_sha` or arming adversarial review" in body
+    assert "one missing-outcome correction" in body
+    assert "correction_attempts" in body
+    assert "dispatch the existing `task-bug-fixer` once" in body
+    assert "second incomplete handoff" in body
+    assert 'handoff.status: "blocked"' in body
+    assert "review.active: false" in body
+    assert "requires an explicit takeover/replan decision" in body
+
+
+def test_state_transition_and_verdict_re_read_checklists_are_explicit():
+    skill = text(SKILL)
+    adversarial = text(ROOT / "plugins/ed3d-orchestrate/skills/adversarial-review/SKILL.md")
+    for body in (skill, adversarial):
+        assert "transition checklist" in body
+        assert "fresh task" in body
+        assert "plan binding" in body
+        assert "approval" in body
+        assert "review arm" in body
+        assert "verdict" in body
+        assert "FIX-FIRST" in body
+        assert "terminal SHIP" in body
+    assert "persist and re-read" in adversarial
+    assert "highest round value" in adversarial
+    assert "same-round `PENDING` entry" in adversarial
+    assert "atomic temporary-file replacement" in adversarial
+    assert "does not protect concurrent model-mediated state edits" in adversarial
+
+
 TESTS = [name for name in globals() if name.startswith("test_")]
 
 

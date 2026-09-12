@@ -63,10 +63,18 @@ The loop maintains `.ed3d/orchestrate-state.json` in the working repository. It 
 ```json
 {
   "task": "add string-reversal CLI with tests",
-  "plan_path": "docs/implementation-plans/2026-08-16-string-reverse-cli/plan.md",
+  "plan_path": "/repo/docs/implementation-plans/2026-08-16-string-reverse-cli/plan.md",
   "base_sha": "3f2a1b9",
   "head_sha": "b7ddd28",
   "phase": "review",
+  "gate": {
+    "approval": "pending"
+  },
+  "handoff": {
+    "status": "not_started",
+    "correction_attempts": 0,
+    "remaining_outcomes": []
+  },
   "review": {
     "active": true,
     "round": 2,
@@ -90,6 +98,7 @@ The loop maintains `.ed3d/orchestrate-state.json` in the working repository. It 
 - `review.round` goes to `max_rounds + 1` when the circuit-breaker trips — that is the signal the hook uses to allow the stop
 - `review.history`: append-only per-round verdict record; survives `/clear`+resume; ignored by the hook
 - `review.nonce`: per-loop verdict tag (8 lowercase hex), generated when a review arms — including re-arms for a new loop — and survives `/clear`+resume; the guardrail matches rendered verdicts by it
+- `handoff.status`: `not_started` | `pending` | `blocked`; a first missing outcome permits one fixer correction attempt, while a second incomplete handoff remains blocked before review
 - `consecutive_blocks` counts blocks-since-last-progress: the hook increments it, the orchestrating skills reset it to 0 on every round/verdict transition; a terminal SHIP state with `consecutive_blocks != 0` is inconsistent and the hook will block the stop until it is repaired
 
 ## Review Policy (and how it differs from ed3d-plan-and-execute)
@@ -147,9 +156,66 @@ Watch `.ed3d/orchestrate-state.json` as the loop runs — phase and review trans
 
 Builders and reviewers run in isolated subagent contexts, but the orchestrating session accumulates every printed subagent response. After the plan-review gate passes, the orchestrator stops at an **operator approval checkpoint** and offers the two approval paths: reply *continue* to approve and proceed in the same context, or `/clear` and then resume to approve and continue with a fresh context — the loop records its full position in the state file (`phase`, `plan_path`, the SHAs, the review block), and completed phases are never repeated. A clean plan-review result does not by itself authorize execution: the approval response (either `continue` or the `/clear` + resume) is processed before any builder dispatch.
 
+A **non-empty task argument always starts a fresh loop** rather than
+auto-resuming. It resets every task, plan, approval, SHA, and review field,
+including the handoff status, correction attempts, `review.max_rounds`,
+history, counters, and nonce; existing plans and commits remain untouched.
+An **empty invocation may resume only** a validated state with
+`phase: "execute" or "review"`, a non-empty absolute `plan_path` that exists,
+and a task that matches the plan context. The clean fresh combination is
+`review.active: false` and `review.verdict: "PENDING"` and is not treated as
+an in-progress loop. Malformed, partial, legacy, or mismatched state fails
+closed.
+
+If read-only planning prevents a reset write, the plan contains this simple
+pending handoff record:
+
+```markdown
+## Orchestration Handoff
+- reset_pending: true
+- requested_task: <task text>
+- prior_task: <task text or unknown>
+- prior_plan_path: <absolute path or none>
+- approval: pending
+```
+
+It is a **pending record, not authorization**. Once planning ends, the
+orchestrator applies the reset, verifies the task and absolute plan path, and
+changes `reset_pending: false` in its control-plane handling before approval.
+Missing, duplicated, or mismatched records leave execution refused; execution remains refused
+until the reset is applied.
+
+Builders and fixers return a Copilot-native **Outcome Handoff** with one row
+for every approved `AC.n` or explicitly requested behavior:
+
+```markdown
+### Outcome Handoff
+- AC.1: complete | incomplete | blocked
+  - Changed: file or symbol
+  - Evidence: command -> observed result
+```
+
+Each row has a `complete, incomplete, or blocked` status, changed location, and behavior-specific command/result;
+a green pre-existing suite without that evidence is a suite-only claim, not
+completion. The first missing outcome receives one correction attempt through
+the existing fixer. A second incomplete/blocked handoff stops before review
+and requires a concrete takeover/replan decision.
+
 This boundary is **prompt-only guidance** — enforced by the workflow text, not by **native Copilot runtime enforcement** (unavailable for this boundary: Copilot has no native facet-transition approval primitive here) and not by **repository hook/script enforcement** (deferred until a native builder-dispatch payload and identity are evidenced). The existing `check-review-loop.py` and `adversary-write-guard.py` hooks are unrelated to this approval checkpoint and are unchanged.
 
-After `/clear`, run `/ed3d-orchestrate:orchestrate` with no arguments — when a state file exists with an in-progress loop, the command auto-resumes from the recorded phase and reports where the loop stands (0.3.1). The explicit `resume` argument still works, and you can `/clear` + resume at any other phase boundary on your own initiative; the state file is current at every transition.
+State transitions remain explicit. The **transition checklist** requires
+persist and re-read each verdict before reporting, history to be
+append-only with at most one same-round protocol-failure `PENDING` entry, and
+progress to reset `consecutive_blocks`. The hook keeps its atomic
+temporary-file replacement, but does not protect concurrent model-mediated state edits.
+This remains procedural and protocol-only.
+
+After `/clear`, run `/ed3d-orchestrate:orchestrate` with no arguments — when
+the state file is a validated in-progress loop, the command resumes from the
+recorded phase, reports where the loop stands, and re-presents any pending
+approval checkpoint. The explicit `resume` argument still works, and you can
+`/clear` + resume at any other phase boundary on your own initiative; the state
+file is current at every transition.
 
 ## 0.5.0 — Enforcement Branch B (protocol-only)
 

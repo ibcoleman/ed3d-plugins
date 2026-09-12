@@ -28,6 +28,9 @@ dispatch as a ``builder.task``/``subagent.*`` pair keyed by ``toolCallId``.
 Treat fixture verdicts as protocol-layer only, not as evidence that any
 particular real event stream passes.
 
+These are synthetic protocol tests: they establish the approval/reset seam
+only and do not claim native mechanical enforcement of builder dispatch.
+
 Each fixture under scripts/fixtures/orchestrate-events/ is replayed and its
 verdict compared against the expected outcome encoded in EXPECTED. The script
 is deterministic, stdlib-only, writes nothing, dispatches no subagents, and
@@ -85,6 +88,36 @@ _SCHEMAS = {
     "session.model_change": ({"from": str, "to": str}, {}),
     "session.usage_checkpoint": ({"totalTokens": int}, {}),
     "session.loop_reset": ({"loop": int}, {}),
+    "orchestration.task_start": (
+        {"task": str, "phase": str, "approval": str, "handoffStatus": str},
+        {
+            "phase": {"research"},
+            "approval": {"pending"},
+            "handoffStatus": {"not_started"},
+        },
+    ),
+    "orchestration.auto_resume": (
+        {
+            "task": str,
+            "planPath": str,
+            "phase": str,
+            "planExists": bool,
+            "taskMatches": bool,
+            "reviewActive": bool,
+            "reviewVerdict": str,
+        },
+        {"phase": {"execute", "review"}},
+    ),
+    "orchestration.pending_reset": (
+        {
+            "requestedTask": str,
+            "priorTask": str,
+            "priorPlanPath": str,
+            "resetPending": bool,
+            "approval": str,
+        },
+        {"approval": {"pending"}},
+    ),
     "skill.invoked": ({"skill": str}, {}),
     "permission.requested": ({"toolCallId": str}, {}),
     "permission.completed": ({"toolCallId": str}, {}),
@@ -126,6 +159,8 @@ def _validate_event(event: dict, prev_seq: int):
             return f"payload.{key} must be an integer, got {type(val).__name__}"
         if typ is str and not isinstance(val, str):
             return f"payload.{key} must be a string, got {type(val).__name__}"
+        if typ is bool and not isinstance(val, bool):
+            return f"payload.{key} must be a boolean, got {type(val).__name__}"
     for key, allowed in enums.items():
         if payload[key] not in allowed:
             return (
@@ -158,6 +193,8 @@ class Replayer:
         self.turn = None  # current assistant turn number (None if none seen)
         self.grant_turn = None  # turn in which gate became granted (None if none)
         self.grant_pre_turn = False  # grant written before any assistant.turn_start
+        self.task = None
+        self.plan_path = ""
         self._builders = {}  # toolCallId -> task number (dispatched, uncorrelated yet)
         self._started = set()  # toolCallIds with a subagent.started
 
@@ -294,6 +331,50 @@ class Replayer:
                     f"seq {event['seq']}: new loop {payload['loop']} reset "
                     "gate to pending"
                 )
+            elif etype == "orchestration.task_start":
+                self.task = payload["task"]
+                self.path = ""
+                self.plan_path = ""
+                self.gate = "pending"
+                self.grant_turn = None
+                self.grant_pre_turn = False
+                result.notes.append(
+                    f"seq {event['seq']}: task start reset control-plane state "
+                    f"for {self.task!r}"
+                )
+            elif etype == "orchestration.auto_resume":
+                valid = (
+                    bool(payload["planPath"])
+                    and payload["planPath"].startswith("/")
+                    and payload["planExists"]
+                    and payload["taskMatches"]
+                    and payload["reviewActive"]
+                    and payload["reviewVerdict"] != "PENDING"
+                )
+                self.task = payload["task"]
+                self.plan_path = payload["planPath"]
+                if not valid:
+                    self.gate = "pending"
+                    self.grant_turn = None
+                    self.grant_pre_turn = False
+                    result.notes.append(
+                        f"seq {event['seq']}: auto-resume refused; "
+                        "state is not a validated in-progress loop"
+                    )
+                else:
+                    result.notes.append(
+                        f"seq {event['seq']}: validated auto-resume for "
+                        f"{self.task!r}"
+                    )
+            elif etype == "orchestration.pending_reset":
+                if payload["resetPending"]:
+                    self.gate = "pending"
+                    self.grant_turn = None
+                    self.grant_pre_turn = False
+                    result.notes.append(
+                        f"seq {event['seq']}: pending reset handoff for "
+                        f"{payload['requestedTask']!r}; execution remains refused"
+                    )
             # All other recognized types are informational; no protocol effect.
 
         # Correlation completeness: any dispatched builder never started?
@@ -355,6 +436,18 @@ EXPECTED = {
     "stale-granted-new-loop.jsonl": (
         Verdict.VIOLATION,
         "a stale grant from a prior loop cannot authorize a new loop",
+    ),
+    "stale-granted-new-task.jsonl": (
+        Verdict.VIOLATION,
+        "a prior task grant is reset before a new task dispatch",
+    ),
+    "clean-default-no-auto-resume.jsonl": (
+        Verdict.VIOLATION,
+        "a clean default state cannot auto-resume a builder",
+    ),
+    "pending-reset.jsonl": (
+        Verdict.VIOLATION,
+        "a pending read-only reset handoff cannot authorize execution",
     ),
     "turn-grant-immediate.jsonl": (
         Verdict.OK,

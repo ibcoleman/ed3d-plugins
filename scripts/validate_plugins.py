@@ -35,6 +35,11 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SANCTIONED_LINE = "Do not dispatch or invoke subagents; return directly to your caller."
+OUTCOME_HANDOFF_HEADER = "### Outcome Handoff"
+OUTCOME_HANDOFF_TWINS = {
+    "plugins/ed3d-plan-and-execute/agents/task-implementor-fast.agent.md",
+    "plugins/ed3d-plan-and-execute/agents/task-bug-fixer.agent.md",
+}
 
 # 14 expected twins: path -> expected model (None = model key must be absent).
 # Copilot-native twins inherit the account's Auto/default model selection.
@@ -133,7 +138,7 @@ POLICY_TARGETS = {
         "rate-limit", "protocol-failure", "ambiguous", "full response",
     ],
     "plugins/ed3d-orchestrate/commands/orchestrate.md": [
-        "records an in-progress loop (`review.active` is true, or `review.verdict` is not `SHIP`)", "do not restart or repeat completed phases",
+        "validated in-progress checks", "do not restart or repeat completed phases",
         "resolve the root with `git rev-parse --show-toplevel`", "never request access to directories outside the project",
         "requires a local git repository with at least one commit", "record a valid `BASE_SHA` before builder execution", "`cd` to the repository root you resolved it from",
     ],
@@ -262,7 +267,24 @@ def check_twin(path, expected_model):
         if parsed.get("model") != expected_model:
             fail("%s: model %r != expected %r" % (path, parsed.get("model"), expected_model))
 
-    # body must be the source body verbatim + the sanctioned line
+    # The two orchestration-facing Copilot twins carry a documented
+    # Copilot-only handoff section. Remove that section before checking the
+    # otherwise source-verbatim body and sanctioned return line.
+    comparable_body = body
+    if path in OUTCOME_HANDOFF_TWINS:
+        if body.count(OUTCOME_HANDOFF_HEADER) != 1:
+            fail("%s: expected one Copilot-only Outcome Handoff section" % path)
+        else:
+            start = body.index(OUTCOME_HANDOFF_HEADER)
+            marker = "\n## What You MUST Do"
+            if marker not in body[start:]:
+                fail("%s: Outcome Handoff section has no closing role section" % path)
+            else:
+                end = body.index(marker, start)
+                comparable_body = body[:start].rstrip("\n") + "\n" + body[end:]
+
+    # body must be the source body verbatim + the sanctioned line, after any
+    # permitted Copilot-only handoff section is removed.
     source_path = path[: -len(".agent.md")] + ".md"
     if not os.path.isfile(os.path.join(ROOT, source_path)):
         fail("%s: source agent missing: %s" % (path, source_path))
@@ -272,7 +294,7 @@ def check_twin(path, expected_model):
         fail("%s: source has no frontmatter/body split" % source_path)
         return
     expected_body = source_body.rstrip("\n") + "\n\n" + SANCTIONED_LINE + "\n"
-    if body.rstrip("\n") + "\n" != expected_body:
+    if comparable_body.rstrip("\n") + "\n" != expected_body:
         fail("%s: body is not source-verbatim + sanctioned line" % path)
     if body.count(SANCTIONED_LINE) != 1:
         fail("%s: sanctioned line appears %d times (expected 1)" % (path, body.count(SANCTIONED_LINE)))

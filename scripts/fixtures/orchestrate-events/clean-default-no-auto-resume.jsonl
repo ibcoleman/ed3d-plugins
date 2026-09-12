@@ -1,0 +1,2 @@
+{"seq":1,"type":"orchestration.auto_resume","payload":{"task":"old task","planPath":"","phase":"execute","planExists":false,"taskMatches":false,"reviewActive":false,"reviewVerdict":"PENDING"}}
+{"seq":2,"type":"builder.task","payload":{"task":1,"tool":"task","toolCallId":"call_clean"}}
