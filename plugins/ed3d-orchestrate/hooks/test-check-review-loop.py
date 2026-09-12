@@ -280,6 +280,74 @@ def main():
     )
     check("current FIX-FIRST lineage -> reconciliation block", reason_ok(decision, "block", "nonce-tagged FIX-FIRST verdict marker"), out)
     shutil.rmtree(root, ignore_errors=True)
+    stale_round = lineage_state(
+        provenance={
+            "round": 1,
+            "dispatch_tool_call_id": "call_dispatch",
+            "reviewer_agent_id": "agent-reviewer",
+        }
+    )
+    stale_round["review"]["round"] = 2
+    root, _, _, out, decision = run(stale_round, genuine)
+    check(
+        "stale provenance round -> ordinary owner block",
+        reason_ok(decision, "block", "review-reconciliation-unavailable"),
+        out,
+    )
+    shutil.rmtree(root, ignore_errors=True)
+    malformed_provenance = lineage_state(
+        provenance={"round": 1, "dispatch_tool_call_id": "call_dispatch"}
+    )
+    root, _, _, out, decision = run(malformed_provenance, genuine)
+    check(
+        "missing reviewer provenance -> ordinary owner block",
+        reason_ok(decision, "block", "review-reconciliation-unavailable"),
+        out,
+    )
+    shutil.rmtree(root, ignore_errors=True)
+    ordinary_tool_events = (
+        genuine.replace(
+            "\n{\"type\": \"subagent.completed\"",
+            "\n"
+            + json.dumps(
+                {
+                    "type": "assistant.message",
+                    "data": {
+                        "toolRequests": [
+                            {"toolCallId": "call_parent_tool", "name": "view"}
+                        ]
+                    },
+                }
+            )
+            + "\n"
+            + json.dumps(
+                {
+                    "type": "tool.execution_start",
+                    "data": {"toolCallId": "call_parent_tool"},
+                }
+            )
+            + "\n{\"type\": \"subagent.completed\"",
+        )
+        .replace(
+            "\n{\"type\": \"subagent.completed\"",
+            "\n"
+            + json.dumps(
+                {
+                    "type": "tool.execution_start",
+                    "data": {"toolCallId": "call_child_tool"},
+                }
+            )
+            + "\n{\"type\": \"subagent.completed\"",
+            1,
+        )
+    )
+    root, _, _, out, decision = run(lineage_state(provenance=provenance), ordinary_tool_events)
+    check(
+        "ordinary parent and child tools do not invalidate current lineage",
+        reason_ok(decision, "block", "nonce-tagged SHIP verdict marker"),
+        out,
+    )
+    shutil.rmtree(root, ignore_errors=True)
     false_positive_transcripts = [
         ("quoted marker", lineage_transcript(content_prefix='> VERDICT: SHIP [a1b2c3d4]')),
         ("fenced marker", lineage_transcript(content_prefix="```")),
@@ -297,7 +365,18 @@ def main():
             "second dispatch id",
             lineage_transcript().replace(
                 '\n{"type": "subagent.completed"',
-                '\n{"type": "assistant.message", "data": {"toolRequests": [{"toolCallId": "call_other"}]}}\n{"type": "subagent.completed"',
+                '\n'
+                + json.dumps(
+                    {
+                        "type": "subagent.started",
+                        "agentId": "agent-other",
+                        "data": {
+                            "toolCallId": "call_other",
+                            "agentName": "adversary",
+                        },
+                    }
+                )
+                + '\n{"type": "subagent.completed"',
             ),
         ),
     ]
@@ -322,6 +401,8 @@ def main():
     check("missing provenance has no unavailable marker", "review-reconciliation-unavailable" not in decision["reason"])
     shutil.rmtree(root, ignore_errors=True)
     exhausted = active()
+    exhausted["review"]["active"] = False
+    exhausted["review"]["verdict"] = "PENDING"
     exhausted["review"]["recovery"] = {
         "status": "reconciliation_exhausted",
         "attempts": 1,
@@ -331,6 +412,33 @@ def main():
     check("exhausted reconciliation -> diagnostic allow", reason_ok(decision, "allow", "review-reconciliation-unavailable"), out)
     check("exhausted reconciliation leaves state unchanged", state_after(path) == exhausted)
     shutil.rmtree(root, ignore_errors=True)
+    malformed_exhaustion_cases = [
+        ("active review", {"active": True, "verdict": "PENDING", "attempts": 1}),
+        ("SHIP verdict", {"active": False, "verdict": "SHIP", "attempts": 1}),
+        ("zero attempts", {"active": False, "verdict": "PENDING", "attempts": 0}),
+        ("two attempts", {"active": False, "verdict": "PENDING", "attempts": 2}),
+        ("wrong marker", {"active": False, "verdict": "PENDING", "attempts": 1, "marker": "wrong"}),
+    ]
+    for label, fields in malformed_exhaustion_cases:
+        malformed = active()
+        malformed["review"].update(
+            {
+                "active": fields["active"],
+                "verdict": fields["verdict"],
+                "recovery": {
+                    "status": "reconciliation_exhausted",
+                    "attempts": fields["attempts"],
+                    "marker": fields.get("marker", "review-reconciliation-unavailable"),
+                },
+            }
+        )
+        root, _, _, out, decision = run(malformed)
+        check(
+            "malformed exhausted %s -> ordinary owner enforcement" % label,
+            reason_ok(decision, "block", "review-reconciliation-unavailable"),
+            out,
+        )
+        shutil.rmtree(root, ignore_errors=True)
 
     print("additional allow paths")
     root, _, _, _, decision = run(active(verdict="PENDING", round_=1, consecutive=7), "VERDICT: SHIP [a1b2c3d4]\n")

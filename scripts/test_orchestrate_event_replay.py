@@ -215,6 +215,32 @@ def _validate_event(event: dict, prev_seq: int):
                 f"payload.{key} must be one of {sorted(allowed)}, "
                 f"got {payload[key]!r}"
             )
+    if etype == "orchestration.ownership":
+        if not payload["task"].strip() or not payload["planPath"].startswith("/"):
+            return "persisted ownership must bind a non-empty task and absolute plan"
+        if payload["status"] in {"owned", "transfer_pending"} and not payload["sessionId"].strip():
+            return "persisted owned state requires a non-empty live session identity"
+        if payload["status"] == "transfer_pending" and (
+            not payload["transferFrom"].strip()
+            or payload["transferFrom"] != payload["sessionId"]
+        ):
+            return "transfer_pending must retain the recorded owner in transferFrom"
+        if payload["status"] == "unowned" and (
+            payload["sessionId"] or payload["transferFrom"]
+        ):
+            return "unowned state cannot carry an owner identity"
+    elif etype == "orchestration.resume":
+        if (
+            not payload["sessionId"].strip()
+            or not payload["task"].strip()
+            or not payload["planPath"].startswith("/")
+        ):
+            return "resume requires non-empty identity/task and absolute plan"
+    elif etype == "orchestration.auto_resume":
+        if not payload["task"].strip():
+            return "auto-resume requires a non-empty task"
+    elif etype == "review.reconciliation" and payload["round"] < 1:
+        return "reconciliation round must be positive"
     return None
 
 
@@ -238,6 +264,8 @@ class ReplayResult:
     recovery_status: str = "none"
     recovery_attempts: int = 0
     preserved_requirements: bool = True
+    review_active: bool = False
+    review_verdict: str = "PENDING"
 
 
 class Replayer:
@@ -259,6 +287,12 @@ class Replayer:
         self.recovery_status = "none"
         self.recovery_attempts = 0
         self.preserved_requirements = True
+        self.phase = ""
+        self.review_active = False
+        self.review_verdict = "PENDING"
+        self.review_round = 1
+        self.state_bound = False
+        self.rearm_authorized = False
         self._builders = {}  # toolCallId -> task number (dispatched, uncorrelated yet)
         self._started = set()  # toolCallIds with a subagent.started
 
@@ -280,6 +314,8 @@ class Replayer:
                 result.transfer_from = self.transfer_from
                 result.recovery_status = self.recovery_status
                 result.recovery_attempts = self.recovery_attempts
+                result.review_active = self.review_active
+                result.review_verdict = self.review_verdict
                 return result
             prev_seq = event["seq"]
             result.events_processed = idx + 1
@@ -436,11 +472,21 @@ class Replayer:
                 self.gate = "pending"
                 self.grant_turn = None
                 self.grant_pre_turn = False
+                task_matches = (
+                    payload["taskMatches"]
+                    if self.task is None
+                    else payload["task"] == self.task
+                )
+                if task_matches != payload["taskMatches"]:
+                    result.violations.append(
+                        f"seq {event['seq']}: auto-resume taskMatches does not "
+                        "match the persisted task"
+                    )
                 valid = (
                     bool(payload["planPath"])
                     and payload["planPath"].startswith("/")
                     and payload["planExists"]
-                    and payload["taskMatches"]
+                    and task_matches
                     and (
                         (
                             payload["phase"] == "execute"
@@ -456,6 +502,10 @@ class Replayer:
                 )
                 self.task = payload["task"]
                 self.plan_path = payload["planPath"]
+                self.phase = payload["phase"]
+                self.review_active = payload["reviewActive"]
+                self.review_verdict = payload["reviewVerdict"]
+                self.state_bound = True
                 if not valid:
                     self.unresolved_binding = True
                     result.notes.append(
@@ -479,29 +529,97 @@ class Replayer:
                         f"{payload['requestedTask']!r}; execution remains refused"
                     )
             elif etype == "orchestration.ownership":
+                ownership_transition_valid = not self.state_bound or (
+                    payload["status"] == self.ownership
+                    and payload["sessionId"] == self.owner_session
+                    and payload["transferFrom"] == self.transfer_from
+                    and payload["task"] == self.task
+                    and payload["planPath"] == self.plan_path
+                    and payload["phase"] == self.phase
+                ) or (
+                    self.ownership == "owned"
+                    and payload["status"] == "transfer_pending"
+                    and payload["sessionId"] == self.owner_session
+                    and payload["transferFrom"] == self.owner_session
+                    and payload["task"] == self.task
+                    and payload["planPath"] == self.plan_path
+                    and payload["phase"] == self.phase
+                )
+                if not ownership_transition_valid:
+                    result.violations.append(
+                        f"seq {event['seq']}: ownership transition does not "
+                        "match the persisted state or authorized transfer"
+                    )
+                    continue
+                if payload["status"] == "recovery_required" and (
+                    payload["sessionId"] or payload["transferFrom"]
+                ):
+                    result.violations.append(
+                        f"seq {event['seq']}: recovery_required state cannot "
+                        "claim a live owner"
+                    )
                 self.ownership = payload["status"]
                 self.owner_session = payload["sessionId"]
                 self.transfer_from = payload["transferFrom"]
                 self.task = payload["task"]
                 self.plan_path = payload["planPath"]
+                self.phase = payload["phase"]
+                self.review_active = payload["phase"] == "review"
+                self.review_verdict = "PENDING"
+                self.review_round = 1
+                self.gate = "pending"
+                self.recovery_status = "none"
+                self.recovery_attempts = 0
+                self.rearm_authorized = False
+                self.state_bound = True
                 result.notes.append(
                     f"seq {event['seq']}: ownership state {self.ownership!r} "
                     f"for {self.owner_session or 'no session'}"
                 )
             elif etype == "orchestration.resume":
+                actual_task_match = self.task is None or payload["task"] == self.task
+                actual_plan_match = self.plan_path == "" or payload["planPath"] == self.plan_path
+                actual_phase_match = self.phase == "" or payload["phase"] == self.phase
+                claimed_state_matches = (
+                    payload["ownershipStatus"] == self.ownership
+                    and payload["recordedOwner"] == self.owner_session
+                    and payload["transferFrom"] == self.transfer_from
+                )
+                claimed_review_matches = (
+                    not self.state_bound
+                    or (
+                        payload["reviewActive"] == self.review_active
+                        and payload["reviewVerdict"] == self.review_verdict
+                    )
+                )
                 valid_binding = (
                     payload["explicit"]
+                    and payload["sessionId"].strip()
                     and payload["planPath"].startswith("/")
-                    and payload["taskMatches"]
-                    and payload["planMatches"]
+                    and actual_task_match
+                    and actual_plan_match
+                    and actual_phase_match
+                    and payload["taskMatches"] == actual_task_match
+                    and payload["planMatches"] == actual_plan_match
+                    and claimed_state_matches
+                    and claimed_review_matches
                     and payload["preserveRequirements"]
+                    and payload["approval"] == self.gate
                 )
                 if not valid_binding:
                     result.violations.append(
-                        f"seq {event['seq']}: resume refused because task/plan/"
-                        "explicit binding is invalid"
+                        f"seq {event['seq']}: resume refused because persisted "
+                        "task/plan/phase/owner/review binding is invalid"
                     )
                 elif self.ownership == "owned" and payload["sessionId"] == self.owner_session:
+                    if (
+                        self.recovery_status == "reconciliation_exhausted"
+                        and payload["reviewActive"] is False
+                        and payload["reviewVerdict"] == "PENDING"
+                    ):
+                        self.rearm_authorized = True
+                        self.recovery_status = "none"
+                        self.recovery_attempts = 0
                     result.notes.append(
                         f"seq {event['seq']}: same-owner continuation preserved "
                         "approval and review requirements"
@@ -532,25 +650,71 @@ class Replayer:
                         f"seq {event['seq']}: unauthorized non-transfer resume "
                         "cannot inherit ownership"
                     )
-                self.preserved_requirements = payload["preserveRequirements"]
+                if valid_binding:
+                    self.preserved_requirements = payload["preserveRequirements"]
                 if payload["approval"] != "pending" or not payload["preserveRequirements"]:
                     result.violations.append(
                         f"seq {event['seq']}: resume did not preserve pending "
                         "approval/review requirements"
                     )
             elif etype == "review.reconciliation":
-                if payload["attempts"] not in {0, 1}:
+                transition_valid = True
+                valid_shape = (
+                    payload["attempts"] in {0, 1}
+                    and payload["round"] == self.review_round
+                    and payload["verdict"] == "PENDING"
+                )
+                if not valid_shape:
+                    transition_valid = False
                     result.violations.append(
-                        f"seq {event['seq']}: reconciliation attempts exceed one"
+                        f"seq {event['seq']}: reconciliation metadata does not "
+                        "match the persisted current-round PENDING review"
                     )
-                if payload["status"] == "reconciliation_exhausted":
-                    if payload["active"] or payload["verdict"] != "PENDING":
-                        result.violations.append(
-                            f"seq {event['seq']}: exhausted recovery must be inactive "
-                            "with no verdict"
+                if payload["status"] == "reconciliation_retrying":
+                    if (
+                        payload["attempts"] != 1
+                        or payload["marker"] != "review-reconciliation-unavailable"
+                        or not payload["active"]
+                        or self.recovery_status == "reconciliation_retrying"
+                        or (
+                            self.recovery_status == "reconciliation_exhausted"
+                            and not self.rearm_authorized
                         )
-                self.recovery_status = payload["status"]
-                self.recovery_attempts = payload["attempts"]
+                    ):
+                        transition_valid = False
+                        result.violations.append(
+                            f"seq {event['seq']}: reconciliation retry is repeated "
+                            "or not authorized by the persisted recovery state"
+                        )
+                elif payload["status"] == "reconciliation_exhausted":
+                    if (
+                        payload["attempts"] != 1
+                        or payload["marker"] != "review-reconciliation-unavailable"
+                        or payload["active"]
+                        or payload["verdict"] != "PENDING"
+                        or self.recovery_status != "reconciliation_retrying"
+                    ):
+                        transition_valid = False
+                        result.violations.append(
+                            f"seq {event['seq']}: exhausted recovery must be the "
+                            "inactive no-verdict transition after one retry"
+                        )
+                elif payload["status"] == "none":
+                    if (
+                        self.recovery_status == "reconciliation_exhausted"
+                        or payload["verdict"] != "PENDING"
+                    ):
+                        transition_valid = False
+                        result.violations.append(
+                            f"seq {event['seq']}: recovery state cannot mutate "
+                            "into a verdict without authorized re-arm"
+                        )
+                if transition_valid:
+                    self.recovery_status = payload["status"]
+                    self.recovery_attempts = payload["attempts"]
+                    self.review_active = payload["active"]
+                    self.review_verdict = payload["verdict"]
+                    self.rearm_authorized = False
             # All other recognized types are informational; no protocol effect.
 
         # Correlation completeness: any dispatched builder never started?
@@ -573,6 +737,8 @@ class Replayer:
         result.recovery_status = self.recovery_status
         result.recovery_attempts = self.recovery_attempts
         result.preserved_requirements = self.preserved_requirements
+        result.review_active = self.review_active
+        result.review_verdict = self.review_verdict
 
         if result.violations:
             result.verdict = Verdict.VIOLATION
@@ -701,6 +867,26 @@ EXPECTED = {
         Verdict.OK,
         "unavailable reconciliation exhausts once and later re-arms explicitly",
     ),
+    "mismatched-binding.jsonl": (
+        Verdict.VIOLATION,
+        "resume task identity must match the persisted task and plan binding",
+    ),
+    "empty-identity.jsonl": (
+        Verdict.MALFORMED,
+        "persisted owned state cannot have an empty live session identity",
+    ),
+    "unauthorized-exhaustion-rearm.jsonl": (
+        Verdict.VIOLATION,
+        "only the recorded owner may re-arm exhausted reconciliation",
+    ),
+    "repeated-reconciliation-retry.jsonl": (
+        Verdict.VIOLATION,
+        "one reconciliation retry cannot be repeated without an authorized re-arm",
+    ),
+    "verdict-mutation-after-exhaustion.jsonl": (
+        Verdict.VIOLATION,
+        "exhausted recovery cannot be mutated into a verdict",
+    ),
 }
 
 
@@ -775,6 +961,18 @@ def check_resume_semantics(name: str, result: ReplayResult) -> str | None:
     if name == "reconciliation-exhausted-rearm.jsonl":
         if result.recovery_attempts != 1 or result.recovery_status != "reconciliation_retrying":
             return "reconciliation recovery was not bounded and explicitly re-armed"
+    if name == "mismatched-binding.jsonl":
+        if not any("persisted task/plan/phase" in violation for violation in result.violations):
+            return "mismatched binding did not compare against persisted identity"
+    if name == "unauthorized-exhaustion-rearm.jsonl":
+        if result.recovery_status != "reconciliation_exhausted" or result.recovery_attempts != 1:
+            return "unauthorized re-arm changed persisted exhausted recovery"
+    if name == "repeated-reconciliation-retry.jsonl":
+        if result.recovery_status != "reconciliation_retrying" or result.recovery_attempts != 1:
+            return "repeated retry changed the already-consumed retry state"
+    if name == "verdict-mutation-after-exhaustion.jsonl":
+        if result.recovery_status != "reconciliation_exhausted" or result.review_verdict != "PENDING":
+            return "verdict mutation changed the persisted exhausted state"
     return None
 
 

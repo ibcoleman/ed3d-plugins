@@ -36,9 +36,11 @@ This plugin is written for Copilot CLI's native delegation. Its skills use Copil
 
 The persisted contract includes `"ownership"` with `unowned`, `owned`,
 `transfer_pending`, and `recovery_required` statuses, plus a `"provenance"`
-object carrying `dispatch_tool_call_id` and `reviewer_agent_id` for the
-current round. It distinguishes same-owner continuation, authorized
-ownership transfer, and explicit legacy recovery. Missing identity uses
+object carrying the current `round`, `dispatch_tool_call_id`, and
+`reviewer_agent_id` for the current round. A fresh loop binds the live parent
+session as `owned` before work; if that identity is unavailable it remains
+unbound and surfaces `ownership-recovery-required`. It distinguishes same-owner
+continuation, authorized ownership transfer, and explicit legacy recovery. Missing identity uses
 `ownership-recovery-required` without mutation. A bound but unavailable
 completed result remains owner-blocked with
 `review-reconciliation-unavailable`; after one retry the explicit
@@ -170,7 +172,7 @@ Watch `.ed3d/orchestrate-state.json` as the loop runs — phase and review trans
 
 ### Context handoff and resume
 
-Builders and reviewers run in isolated subagent contexts, but the orchestrating session accumulates every printed subagent response. After the plan-review gate passes, the orchestrator stops at an **operator approval checkpoint** and offers the two approval paths: reply *continue* to approve and proceed in the same context, or `/clear` and then resume to approve and continue with a fresh context — the loop records its full position in the state file (`phase`, `plan_path`, the SHAs, the review block), and completed phases are never repeated. A clean plan-review result does not by itself authorize execution: the approval response (either `continue` or the `/clear` + resume) is processed before any builder dispatch.
+Builders and reviewers run in isolated subagent contexts, but the orchestrating session accumulates every printed subagent response. After the plan-review gate passes, the orchestrator stops at an **operator approval checkpoint** and offers the two approval paths: reply *continue* to approve and proceed in the same context, or, when a different session is required, write `transfer_pending` before `/clear`, resume, and then process *continue* in the fresh context. `/clear` alone is only a context handoff, not approval or an ownership claim — the loop records its full position in the state file (`phase`, `plan_path`, the SHAs, the review block), and completed phases are never repeated. A clean plan-review result does not by itself authorize execution: the approval response is processed before any builder dispatch.
 
 A **non-empty task argument always starts a fresh loop** rather than
 auto-resuming. It resets every task, plan, approval, SHA, and review field,

@@ -225,6 +225,43 @@ def test_roadmap_records_parent_scope_and_branch_boundary():
     assert "Branch B" in roadmap
 
 
+def test_operational_owner_and_provenance_checklists_are_present():
+    bodies = [
+        text(COMMAND),
+        text(SKILL),
+        text(ROOT / "plugins/ed3d-orchestrate/skills/adversarial-review/SKILL.md"),
+    ]
+    required = (
+        "read the live session identity",
+        "ownership.status: owned",
+        "session identity is unavailable",
+        "persist `review.provenance`",
+        "dispatch_tool_call_id",
+        "reviewer_agent_id",
+        "clear `review.provenance`",
+        "transfer_pending",
+        "before `/clear`",
+    )
+    for body in bodies:
+        for phrase in required:
+            assert phrase in body, phrase
+
+
+def test_exhaustion_protocol_is_not_a_ship_path():
+    bodies = [
+        text(COMMAND),
+        text(SKILL),
+        text(ROOT / "plugins/ed3d-orchestrate/skills/adversarial-review/SKILL.md"),
+    ]
+    for body in bodies:
+        assert "protocol failure" in body
+        assert "reconciliation_exhausted" in body
+        assert "review.active: false" in body
+        assert 'review.verdict: "PENDING"' in body
+        assert "explicit operator choice to re-arm or abandon" in body
+        assert "never SHIP" in body
+
+
 TESTS = [name for name in globals() if name.startswith("test_")]
 
 

@@ -94,6 +94,37 @@ while `transfer_pending`; a new session is silently allowed before its claim.
 Missing event identity or malformed transfer emits the stable
 `ownership-recovery-required` allow marker and leaves bytes unchanged.
 
+### Executable ownership and provenance checklist
+
+For a fresh task, read the live session identity before any phase transition.
+When it is available, write `ownership.status: owned` with that exact
+`session_id`, the current task, absolute plan, and phase, then re-read the
+state file before dispatching or enabling review. If the session identity is unavailable,
+leave the state unowned (or mark malformed legacy state
+`recovery_required`), do not dispatch, do not claim ownership, and surface
+`ownership-recovery-required`; never invent an identity from transcript text.
+
+Before each adversary dispatch, set the current round and `review.verdict` to
+`PENDING`, clear `review.provenance`, and persist `review.provenance` and
+`review.recovery` as
+`status: none`, `attempts: 0`, `marker: null`. Immediately after the parent
+dispatch, persist `review.provenance.round` and
+`dispatch_tool_call_id` from the matching task request/tool-start pair. After
+`subagent.started` supplies the reviewer identity, persist
+`reviewer_agent_id` in the same round and re-read all three bindings before
+using the stop hook's reconciliation result. If any required identifier is
+missing or crosses rounds, leave the owner enforcement active and use the
+`review-reconciliation-unavailable` diagnostic; do not infer a verdict.
+
+before `/clear` will create a different live session, the current owner must
+write and re-read `ownership.status: transfer_pending` with
+`transfer_from` equal to the current `session_id`, preserving task, absolute
+plan, phase, approval, review, round, nonce, and history. `/clear` is only the
+context handoff; it is not an ownership claim or approval. A resumed session
+must process the explicit `resume` command, validate its live identity and
+bindings, replace the owner, clear `transfer_from`, and only then continue.
+Same-owner continuation does not write `transfer_pending`.
+
 Review provenance is observational evidence: the stop hook accepts only a
 current dispatch/start/reviewer-message/completion lineage and its exact
 nonce-tagged two-line terminal verdict. It streams JSONL beyond 256 KiB and
@@ -107,6 +138,15 @@ unavailable result writes `reconciliation_exhausted`, `attempts: 1`,
 Stopping is then allowed only with `review-reconciliation-unavailable` and
 an explicit no-verdict operator choice. No verdict exists in that state and
 no SHIP outcome is inferred.
+
+If an adversary response has no parseable verdict, record one same-round
+`protocol failure`/`PENDING` history entry and perform only the existing one
+protocol re-dispatch. If that retry also has no verdict, persist
+`reconciliation_exhausted`, `review.active: false`,
+`review.verdict: "PENDING"`, `attempts: 1`, and the diagnostic marker in one
+state transition. Report that no verdict exists, allow the stop only through
+the exhausted diagnostic, and require an explicit operator choice to re-arm or abandon.
+This exhausted protocol-failure path must never SHIP.
 
 ## Normal mode
 

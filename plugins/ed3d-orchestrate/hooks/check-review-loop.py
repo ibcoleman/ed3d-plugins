@@ -110,6 +110,18 @@ def terminal_ship_state_is_consistent(review):
     )
 
 
+def exhausted_recovery_is_consistent(review):
+    recovery = review.get("recovery")
+    return (
+        isinstance(recovery, dict)
+        and recovery.get("status") == "reconciliation_exhausted"
+        and recovery.get("marker") == RECOVERY_RECONCILIATION
+        and as_int(recovery.get("attempts")) == 1
+        and review.get("active") is False
+        and review.get("verdict") == "PENDING"
+    )
+
+
 def bump_consecutive_blocks(state, review, consecutive, state_path):
     try:
         review["consecutive_blocks"] = consecutive + 1
@@ -175,6 +187,26 @@ def _terminal_verdict(content, nonce):
     return verdict
 
 
+def _provenance_status(review):
+    """Classify the optional reviewer binding without weakening enforcement."""
+    provenance = review.get("provenance")
+    if provenance is None:
+        return "missing"
+    if not isinstance(provenance, dict):
+        return "invalid"
+    if as_int(provenance.get("round")) != as_int(review.get("round")):
+        return "invalid"
+    if not isinstance(provenance.get("dispatch_tool_call_id"), str) or not provenance.get(
+        "dispatch_tool_call_id"
+    ):
+        return "invalid"
+    if not isinstance(provenance.get("reviewer_agent_id"), str) or not provenance.get(
+        "reviewer_agent_id"
+    ):
+        return "invalid"
+    return "valid"
+
+
 def reconcile_transcript(path, review):
     """Return ``SHIP``/``FIX-FIRST``, ``unavailable``, or ``None``.
 
@@ -182,16 +214,15 @@ def reconcile_transcript(path, review):
     The file is consumed from the beginning so results beyond the old tail
     limit remain visible without retaining the transcript.
     """
-    provenance = review.get("provenance")
     nonce = nonce_from_review(review)
-    if not isinstance(provenance, dict) or not nonce:
+    provenance_status = _provenance_status(review)
+    if provenance_status == "missing" or not nonce:
         return None
+    if provenance_status != "valid":
+        return "unavailable"
+    provenance = review["provenance"]
     dispatch_id = provenance.get("dispatch_tool_call_id")
     reviewer_id = provenance.get("reviewer_agent_id")
-    if not isinstance(dispatch_id, str) or not dispatch_id:
-        return None
-    if not isinstance(reviewer_id, str) or not reviewer_id:
-        return None
     if not path or not os.path.isfile(path):
         return "unavailable"
 
@@ -216,10 +247,6 @@ def reconcile_transcript(path, review):
                     agent_id = event.get("agentId")
                     if agent_id is None:
                         ids = _tool_call_ids(event)
-                        if candidate_started and any(
-                            tool_call_id != dispatch_id for tool_call_id in ids
-                        ):
-                            candidate_invalid = True
                         assistant_dispatch_ids.update(ids)
                     elif agent_id == reviewer_id:
                         data = event.get("data")
@@ -231,8 +258,6 @@ def reconcile_transcript(path, review):
                 elif event_type == "tool.execution_start":
                     tool_call_id = _data_tool_call_id(event)
                     if tool_call_id:
-                        if candidate_started and tool_call_id != dispatch_id:
-                            candidate_invalid = True
                         start_dispatch_ids.add(tool_call_id)
                 elif event_type == "subagent.started":
                     tool_call_id = _data_tool_call_id(event)
@@ -251,6 +276,16 @@ def reconcile_transcript(path, review):
                             candidate_started = True
                         else:
                             candidate_invalid = True
+                    elif (
+                        candidate_started
+                        and agent_name in ADVERSARY_NAMES
+                        and isinstance(tool_call_id, str)
+                    ):
+                        # Only a second adversary dispatch competes with the
+                        # current reviewer.  Ordinary parent/child tools are
+                        # unrelated transcript activity and must not poison a
+                        # genuine completion chain.
+                        candidate_invalid = True
                 elif event_type == "subagent.completed":
                     tool_call_id = _data_tool_call_id(event)
                     agent_id = event.get("agentId")
@@ -258,10 +293,6 @@ def reconcile_transcript(path, review):
                         if candidate_completed or not candidate_started:
                             candidate_invalid = True
                         candidate_completed = True
-                elif candidate_started and event_type in {"assistant.message", "tool.execution_start"}:
-                    tool_call_id = _data_tool_call_id(event)
-                    if tool_call_id and tool_call_id != dispatch_id:
-                        candidate_invalid = True
     except Exception:
         return "unavailable"
 
@@ -320,15 +351,29 @@ def main():
         consecutive = 0
 
     recovery = review.get("recovery")
-    if (
-        isinstance(recovery, dict)
-        and recovery.get("status") == "reconciliation_exhausted"
-        and recovery.get("marker") == RECOVERY_RECONCILIATION
-    ):
+    if isinstance(recovery, dict) and recovery.get("status") == "reconciliation_exhausted" and exhausted_recovery_is_consistent(review):
         emit(
             "allow",
             "ed3d-orchestrate review-reconciliation-unavailable: reconciliation "
             "is exhausted; no verdict exists and an explicit operator choice is required.",
+        )
+        return
+    if isinstance(recovery, dict) and recovery.get("status") == "reconciliation_exhausted":
+        if consecutive >= SAFE_BLOCK_CAP:
+            emit(
+                "allow",
+                "ed3d-orchestrate guardrail: 7 consecutive blocks reached while "
+                "reconciliation-exhausted metadata is inconsistent; stop allowed "
+                "only for the CLI safety cap and no verdict is inferred.",
+            )
+            return
+        bump_consecutive_blocks(state, review, consecutive, state_path)
+        emit(
+            "block",
+            "ed3d-orchestrate guardrail: review-reconciliation-unavailable: "
+            "reconciliation_exhausted metadata is inconsistent; keep ordinary "
+            "owner enforcement and repair the recovery state without claiming "
+            "a verdict.",
         )
         return
 
