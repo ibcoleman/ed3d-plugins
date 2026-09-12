@@ -55,8 +55,12 @@ At loop start, create `.ed3d/orchestrate-state.json` in the working directory of
   `phase: "execute" or "review"`, a non-empty absolute `plan_path` that exists,
   and a task that matches the plan context. The clean fresh combination of
   `review.active: false` and `review.verdict: "PENDING"` is not automatically
-  treated as an in-progress loop. Malformed, partial, legacy, or mismatched
-  state fails closed and returns to the pending fresh baseline.
+  treated as an in-progress loop when it is unbound. A plan-bound
+  `phase: "execute"` checkpoint with that pending review pair is resumable so
+  the operator can reach the approval handoff; an active `phase: "review"`
+  checkpoint is resumable even while its verdict is `"PENDING"`. Malformed,
+  partial, legacy, or mismatched state fails closed and returns to the pending
+  fresh baseline.
   The required condition is that task matches the plan context.
   The fail-closed rule is: malformed, partial, legacy, or mismatched state fails closed.
 - A stale `"granted"` value, prior plan path, SHA, nonce, history, or correction
@@ -237,26 +241,6 @@ changed location, and a behavior-specific command/result. A green pre-existing
 suite without behavior-specific evidence is a **suite-only claim** and is not
 completion. `incomplete` and `blocked` rows include the remaining gap.
 
-Before recording `head_sha` or arming adversarial review, compare the report
-rows with the approved plan criteria. This is a procedural handoff check backed
-by static contract tests and bounded synthetic replays, not a universal
-semantic parser or native builder gate.
-
-On the first missing/incomplete requested outcome, set `handoff.status:
-"pending"`, increment `correction_attempts` to `1`, retain only the missing
-outcomes in `remaining_outcomes`, and dispatch the existing `task-bug-fixer` once
-with those outcomes and their evidence gaps. This is one missing-outcome correction attempt.
-The orchestrator performs one missing-outcome correction attempt only.
-Do not arm adversarial review while the handoff is pending.
-If the fixer refuses, fails to commit, or returns another incomplete/blocked
-handoff, set `handoff.status: "blocked"` and retain `remaining_outcomes`. Keep
-`review.active: false` and `gate.approval: "pending"`; report a concrete
-takeover/replan decision. The blocked handoff requires an explicit takeover/replan decision.
-Resume must not silently dispatch a second fixer. A new task reset clears the
-block; an incomplete handoff after that one correction attempt is a second incomplete handoff.
-An explicit operator takeover may continue with the
-preserved commit, but remains subject to independent review.
-
 Fan out builders. One bounded task per dispatch — a builder gets a task it can complete fully with tests and a commit.
 
 - **Independent tasks may run in parallel; dependent tasks must be sequenced.** If a dispatch fails with a provider rate-limit error, serialize: at most 2 in flight for the rest of the phase.
@@ -268,7 +252,38 @@ Fan out builders. One bounded task per dispatch — a builder gets a task it can
 - After EVERY subagent completes, print its **full response** before taking any other action. No summarizing, no paraphrasing. Include test counts, issue lists, commit hashes, error messages. Exception: in the review loop, the verdict's state-file commit happens in the same turn, immediately before printing — the guardrail reads the file, not the transcript.
 - Before every dispatch, say in 2–3 sentences what you're asking the agent to do and which phase it covers.
 
-After all builders have reported, ensure implementation work is committed, record `head_sha` from the current `HEAD`, and verify `base_sha` and `head_sha` are both valid commits and differ unless the operator explicitly accepted a no-op task. Then update state: `phase: "review"` (`phase: "execute"` is set earlier, at the context-handoff gate).
+After all builders have reported, compare the report rows with the approved
+plan criteria before recording `head_sha` or arming adversarial review. This is
+a procedural handoff check backed by static contract tests and bounded
+synthetic replays, not a universal semantic parser or native builder gate.
+
+On the first missing/incomplete requested outcome, set `handoff.status:
+"pending"`, increment `correction_attempts` to `1`, retain only the missing
+outcomes in `remaining_outcomes`, and dispatch the existing `task-bug-fixer` once
+with those outcomes and their evidence gaps. This is one missing-outcome correction attempt.
+The orchestrator performs one missing-outcome correction attempt only.
+Do not arm adversarial review while the handoff is pending.
+If the fixer completes the missing outcomes, commits the correction, and
+returns complete handoff rows with behavior-specific evidence, persist
+`handoff.status: "verified"`, preserve `correction_attempts: 1`, and clear
+`remaining_outcomes: []`. Re-read those persisted fields and the verified fixer
+commit before recording `head_sha` or arming review. A successful correction
+therefore makes the handoff explicitly reviewable without silently resetting
+the correction counter.
+If the fixer refuses, fails to commit, or returns another incomplete/blocked
+handoff, set `handoff.status: "blocked"` and retain `remaining_outcomes`. Keep
+`review.active: false` and `gate.approval: "pending"`; report a concrete
+takeover/replan decision. The blocked handoff requires an explicit takeover/replan decision.
+Resume must not silently dispatch a second fixer. A new task reset clears the
+block; an incomplete handoff after that one correction attempt is a second incomplete handoff.
+An explicit operator takeover may continue with the
+preserved commit, but remains subject to independent review.
+
+Only after this handoff check succeeds should implementation work be committed,
+record `head_sha` from the current `HEAD`, and verify `base_sha` and `head_sha`
+verified as valid distinct commits unless the operator explicitly accepted a
+no-op task. Then update state: `phase: "review"` (`phase: "execute"` is set
+earlier, at the context-handoff gate).
 
 ## Phase 5: Tumble Dryer
 

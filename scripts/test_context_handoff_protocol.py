@@ -15,6 +15,8 @@ dependencies.
 """
 from __future__ import annotations
 
+import json
+import re
 import sys
 from pathlib import Path
 
@@ -171,7 +173,7 @@ def test_outcome_handoff_is_verified_before_review_and_recovery_is_bounded():
     assert "complete, incomplete, or blocked" in body
     assert "changed location" in body
     assert "behavior-specific command/result" in body
-    assert "Before recording `head_sha` or arming adversarial review" in body
+    assert "before recording `head_sha` or arming adversarial review" in body
     assert "one missing-outcome correction" in body
     assert "correction_attempts" in body
     assert "dispatch the existing `task-bug-fixer` once" in body
@@ -179,6 +181,88 @@ def test_outcome_handoff_is_verified_before_review_and_recovery_is_bounded():
     assert 'handoff.status: "blocked"' in body
     assert "review.active: false" in body
     assert "requires an explicit takeover/replan decision" in body
+
+
+def test_successful_handoff_correction_persists_verified_state():
+    body = text(SKILL)
+    correction_idx = body.index("On the first missing/incomplete requested outcome")
+    success_idx = body.index("If the fixer completes", correction_idx)
+    review_idx = body.index(
+        "before recording `head_sha` or arming review", success_idx
+    )
+    assert correction_idx < success_idx < review_idx
+    success = body[success_idx:review_idx]
+    assert 'handoff.status: "verified"' in success
+    assert 'correction_attempts: 1' in success
+    assert "remaining_outcomes: []" in success
+    assert "Re-read" in success
+    assert "Do not arm adversarial review while the handoff is pending" in body
+
+
+def test_command_checks_handoff_after_builder_completion():
+    body = text(COMMAND)
+    dispatch_idx = body.index("builder dispatch")
+    completion_idx = body.index("After all builders have reported")
+    review_idx = body.index("review armed")
+    assert dispatch_idx < completion_idx < review_idx
+    assert "Before any builder dispatch, the orchestrator checks" not in body
+    skill = text(SKILL)
+    assert skill.index("Fan out builders") < skill.index(
+        "After all builders have reported"
+    )
+    assert skill.index("After all builders have reported") < skill.index(
+        "Only after this handoff check succeeds"
+    )
+
+
+def _canonical_state(body: str) -> dict:
+    marker = "At loop start, create `.ed3d/orchestrate-state.json`"
+    start = body.index(marker)
+    match = re.search(r"```json\n(.*?)\n```", body[start:], re.DOTALL)
+    assert match, "canonical fresh-state JSON example is missing"
+    return json.loads(match.group(1))
+
+
+def _assert_canonical_defaults(state: dict) -> None:
+    assert state["task"] == "one-line description of the task"
+    assert state["plan_path"] is None
+    assert state["base_sha"] is None
+    assert state["head_sha"] is None
+    assert state["phase"] == "research"
+    assert state["gate"] == {"approval": "pending"}
+    assert state["handoff"] == {
+        "status": "not_started",
+        "correction_attempts": 0,
+        "remaining_outcomes": [],
+    }
+    assert state["review"] == {
+        "active": False,
+        "round": 0,
+        "max_rounds": 3,
+        "verdict": "PENDING",
+        "open_critical_high": [],
+        "consecutive_blocks": 0,
+        "history": [],
+        "nonce": None,
+    }
+
+
+def test_canonical_reset_defaults_and_stale_review_mutations_are_detected():
+    state = _canonical_state(text(SKILL))
+    _assert_canonical_defaults(state)
+    for key, value in (
+        ("max_rounds", 99),
+        ("nonce", "stale123"),
+        ("consecutive_blocks", 6),
+    ):
+        mutated = json.loads(json.dumps(state))
+        mutated["review"][key] = value
+        try:
+            _assert_canonical_defaults(mutated)
+        except AssertionError:
+            pass
+        else:
+            raise AssertionError(f"stale review mutation was not detected: {key}")
 
 
 def test_state_transition_and_verdict_re_read_checklists_are_explicit():

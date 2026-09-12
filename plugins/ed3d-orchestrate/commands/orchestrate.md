@@ -11,9 +11,11 @@ Before asking for a task, locate `.ed3d/orchestrate-state.json` with direct file
 
 If `$1` is `resume`, or if `$1` is empty and the valid state file passes the
 validated in-progress checks (`phase: "execute" or "review"`, a non-empty
-absolute existing `plan_path`, and a task matching the plan context, while the
-clean `review.active: false` / `review.verdict: "PENDING"` combination is
-excluded):
+absolute existing `plan_path`, and a task matching the plan context) while
+either preserving a plan-bound execute checkpoint for its pending approval or
+resuming an active review, including an active `"PENDING"` review. The clean
+fresh combination with no bound plan and `review.active: false` /
+`review.verdict: "PENDING"` remains excluded:
 
 1. Read the state file, then `cd` to the repository root you resolved it from — `/clear` preserves the shell's working directory (a live resume once ran from `docs/`), so make every subsequent git command and state-file write root-relative.
 2. Report the recorded `task`, `phase`, `plan_path`, and review state to the operator in one short paragraph.
@@ -33,10 +35,12 @@ If `$1` is `resume` and no state file exists, say so and ask for the task. If `$
   plane is reset.
 - An **empty invocation may resume only** when the state is valid and
   in-progress: `phase: "execute" or "review"`, a non-empty absolute `plan_path` that exists,
-  and a task that matches the plan context. The clean fresh combination is
-  `review.active: false` and `review.verdict: "PENDING"`; it is not an
-  in-progress loop. Malformed, partial, legacy, or mismatched state fails closed
-  and returns to the pending fresh baseline. The fail-closed rule is:
+  and a task that matches the plan context. The unbound clean fresh combination
+  with `review.active: false` and `review.verdict: "PENDING"` is not an
+  in-progress loop; a plan-bound execute checkpoint and an active review,
+  including active `PENDING`, remain resumable. Malformed, partial, legacy, or
+  mismatched state fails closed and returns to the pending fresh baseline. The
+  fail-closed rule is:
   malformed, partial, legacy, or mismatched state fails closed.
   A resume is valid only when task matches the plan context; malformed, partial,
   legacy, or mismatched state fails closed.
@@ -58,18 +62,7 @@ plan.md artifact and records this permitted section in that artifact:
 This is a **pending record, not authorization**. After planning, apply and
 verify the reset against the task and absolute plan path, then change
 `reset_pending: false` in control-plane handling before the later approval
-write. If the record is missing, duplicated, or does not match, execution
-remains refused.
-
-Before any builder dispatch, the orchestrator checks the Copilot-native
-`### Outcome Handoff` rows for every approved `AC.n`: status
-(`complete, incomplete, or blocked`), changed location, and a
-behavior-specific command/result. A suite-only claim is not completion. The
-first missing outcome gets one correction attempt through the existing fixer;
-the second incomplete handoff is blocked and requires a concrete
-takeover/replan decision before independent review can arm.
-The second incomplete handoff requires an explicit takeover/replan decision;
-execution remains refused.
+write. If the record is missing, duplicated, or does not match, execution remains refused.
 
 State transitions use the existing state file and verdict checklist. The hook
 retains atomic temporary-file replacement, but that does not protect
@@ -88,3 +81,14 @@ $1 contains the task description. If it is empty or vague after the auto-resume 
    Task: $1
 
 3. Follow the skill exactly: research (scout-sweep) → plan document → plan-review gate → **operator approval checkpoint** → builder execution → adversarial review rounds → final report. The plan-review pass is followed by an explicit approval checkpoint before any builder dispatch: the orchestrator ends its turn and offers the two approval paths — reply **continue** to proceed in the same context, or `/clear` then resume with a fresh context. Maintain `.ed3d/orchestrate-state.json` at every transition, record the plan document's absolute path as `plan_path` as soon as it is written so resume can find it, record a valid `BASE_SHA` before builder execution so review has a real diff range, and write `gate.approval: "granted"` to the state file in the same turn, immediately before the first builder dispatch, only after the operator's explicit `continue`/resume authorization is processed — never dispatch while approval is `"pending"`, stale, malformed, or partial.
+
+After all builders have reported, check the Copilot-native `### Outcome
+Handoff` rows for every approved `AC.n`: status (`complete, incomplete, or
+blocked`), changed location, and a behavior-specific command/result. A
+suite-only claim is not completion. The first missing outcome gets one
+correction attempt through the existing fixer; on success, persist
+`handoff.status: "verified"`, preserve `correction_attempts: 1`, clear
+`remaining_outcomes: []`, and re-read that state before review. A second
+incomplete handoff is `blocked` and requires a concrete takeover/replan
+decision; do not arm independent review while it remains unresolved. Only
+after this check succeeds should `head_sha` be recorded and review armed.

@@ -98,7 +98,7 @@ The loop maintains `.ed3d/orchestrate-state.json` in the working repository. It 
 - `review.round` goes to `max_rounds + 1` when the circuit-breaker trips — that is the signal the hook uses to allow the stop
 - `review.history`: append-only per-round verdict record; survives `/clear`+resume; ignored by the hook
 - `review.nonce`: per-loop verdict tag (8 lowercase hex), generated when a review arms — including re-arms for a new loop — and survives `/clear`+resume; the guardrail matches rendered verdicts by it
-- `handoff.status`: `not_started` | `pending` | `blocked`; a first missing outcome permits one fixer correction attempt, while a second incomplete handoff remains blocked before review
+- `handoff.status`: `not_started` | `pending` | `verified` | `blocked`; a first missing outcome permits one fixer correction attempt, a successful correction is persisted as `verified`, and a second incomplete handoff remains blocked before review
 - `consecutive_blocks` counts blocks-since-last-progress: the hook increments it, the orchestrating skills reset it to 0 on every round/verdict transition; a terminal SHIP state with `consecutive_blocks != 0` is inconsistent and the hook will block the stop until it is repaired
 
 ## Review Policy (and how it differs from ed3d-plan-and-execute)

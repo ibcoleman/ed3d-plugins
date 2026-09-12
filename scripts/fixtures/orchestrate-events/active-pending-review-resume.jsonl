@@ -1,0 +1,4 @@
+{"seq":1,"type":"orchestration.auto_resume","payload":{"task":"review task","planPath":"/repo/plan.md","phase":"review","planExists":true,"taskMatches":true,"reviewActive":true,"reviewVerdict":"PENDING"}}
+{"seq":2,"type":"gate.approval","payload":{"approval":"granted","path":"continue"}}
+{"seq":3,"type":"builder.task","payload":{"task":1,"tool":"task","toolCallId":"call_active_pending"}}
+{"seq":4,"type":"subagent.started","payload":{"agentName":"ed3d-builder","toolCallId":"call_active_pending","model":"gpt-5.5"}}
