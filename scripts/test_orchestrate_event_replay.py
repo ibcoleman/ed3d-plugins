@@ -28,6 +28,9 @@ dispatch as a ``builder.task``/``subagent.*`` pair keyed by ``toolCallId``.
 Treat fixture verdicts as protocol-layer only, not as evidence that any
 particular real event stream passes.
 
+These are synthetic protocol tests: they establish the approval/reset seam
+only and do not claim native mechanical enforcement of builder dispatch.
+
 Each fixture under scripts/fixtures/orchestrate-events/ is replayed and its
 verdict compared against the expected outcome encoded in EXPECTED. The script
 is deterministic, stdlib-only, writes nothing, dispatches no subagents, and
@@ -85,6 +88,36 @@ _SCHEMAS = {
     "session.model_change": ({"from": str, "to": str}, {}),
     "session.usage_checkpoint": ({"totalTokens": int}, {}),
     "session.loop_reset": ({"loop": int}, {}),
+    "orchestration.task_start": (
+        {"task": str, "phase": str, "approval": str, "handoffStatus": str},
+        {
+            "phase": {"research"},
+            "approval": {"pending"},
+            "handoffStatus": {"not_started"},
+        },
+    ),
+    "orchestration.auto_resume": (
+        {
+            "task": str,
+            "planPath": str,
+            "phase": str,
+            "planExists": bool,
+            "taskMatches": bool,
+            "reviewActive": bool,
+            "reviewVerdict": str,
+        },
+        {"phase": {"execute", "review"}},
+    ),
+    "orchestration.pending_reset": (
+        {
+            "requestedTask": str,
+            "priorTask": str,
+            "priorPlanPath": str,
+            "resetPending": bool,
+            "approval": str,
+        },
+        {"approval": {"pending"}},
+    ),
     "skill.invoked": ({"skill": str}, {}),
     "permission.requested": ({"toolCallId": str}, {}),
     "permission.completed": ({"toolCallId": str}, {}),
@@ -126,6 +159,8 @@ def _validate_event(event: dict, prev_seq: int):
             return f"payload.{key} must be an integer, got {type(val).__name__}"
         if typ is str and not isinstance(val, str):
             return f"payload.{key} must be a string, got {type(val).__name__}"
+        if typ is bool and not isinstance(val, bool):
+            return f"payload.{key} must be a boolean, got {type(val).__name__}"
     for key, allowed in enums.items():
         if payload[key] not in allowed:
             return (
@@ -147,6 +182,8 @@ class ReplayResult:
     events_processed: int = 0
     violations: list = field(default_factory=list)
     notes: list = field(default_factory=list)
+    unresolved_reset: bool = False
+    unresolved_binding: bool = False
 
 
 class Replayer:
@@ -158,6 +195,10 @@ class Replayer:
         self.turn = None  # current assistant turn number (None if none seen)
         self.grant_turn = None  # turn in which gate became granted (None if none)
         self.grant_pre_turn = False  # grant written before any assistant.turn_start
+        self.task = None
+        self.plan_path = ""
+        self.unresolved_reset = False
+        self.unresolved_binding = False
         self._builders = {}  # toolCallId -> task number (dispatched, uncorrelated yet)
         self._started = set()  # toolCallIds with a subagent.started
 
@@ -172,6 +213,8 @@ class Replayer:
                 result.events_processed = idx
                 result.gate = self.gate
                 result.path = self.path
+                result.unresolved_reset = self.unresolved_reset
+                result.unresolved_binding = self.unresolved_binding
                 return result
             prev_seq = event["seq"]
             result.events_processed = idx + 1
@@ -201,6 +244,12 @@ class Replayer:
                         f"seq {event['seq']}: builder.task (task {payload['task']}) "
                         f"dispatched while gate.approval={self.gate!r} (not granted)"
                     )
+                elif self.unresolved_reset or self.unresolved_binding:
+                    result.violations.append(
+                        f"seq {event['seq']}: builder.task (task {payload['task']}) "
+                        "dispatched before unresolved reset/task binding was "
+                        "explicitly resolved"
+                    )
                 elif self.grant_turn is not None and self.turn != self.grant_turn:
                     result.violations.append(
                         f"seq {event['seq']}: builder.task (task {payload['task']}) "
@@ -218,6 +267,12 @@ class Replayer:
                     result.violations.append(
                         f"seq {event['seq']}: subagent.started ({payload['agentName']}) "
                         f"while gate.approval={self.gate!r} (not granted)"
+                    )
+                elif self.unresolved_reset or self.unresolved_binding:
+                    result.violations.append(
+                        f"seq {event['seq']}: subagent.started "
+                        f"({payload['agentName']}) dispatched before unresolved "
+                        "reset/task binding was explicitly resolved"
                     )
                 else:
                     self._started.add(payload["toolCallId"])
@@ -290,10 +345,74 @@ class Replayer:
                 self.gate = "pending"
                 self.grant_turn = None
                 self.grant_pre_turn = False
+                self.unresolved_reset = False
+                self.unresolved_binding = False
                 result.notes.append(
                     f"seq {event['seq']}: new loop {payload['loop']} reset "
                     "gate to pending"
                 )
+            elif etype == "orchestration.task_start":
+                self.task = payload["task"]
+                self.path = ""
+                self.plan_path = ""
+                self.gate = "pending"
+                self.grant_turn = None
+                self.grant_pre_turn = False
+                self.unresolved_reset = False
+                self.unresolved_binding = False
+                result.notes.append(
+                    f"seq {event['seq']}: task start reset control-plane state "
+                    f"for {self.task!r}"
+                )
+            elif etype == "orchestration.auto_resume":
+                # Resuming never carries approval across the checkpoint.  A
+                # valid binding clears only the binding rejection; a pending
+                # reset remains unresolved until an explicit task reset.
+                self.gate = "pending"
+                self.grant_turn = None
+                self.grant_pre_turn = False
+                valid = (
+                    bool(payload["planPath"])
+                    and payload["planPath"].startswith("/")
+                    and payload["planExists"]
+                    and payload["taskMatches"]
+                    and (
+                        (
+                            payload["phase"] == "execute"
+                            and not payload["reviewActive"]
+                            and payload["reviewVerdict"] == "PENDING"
+                        )
+                        or (
+                            payload["phase"] == "review"
+                            and payload["reviewActive"]
+                            and payload["reviewVerdict"] in {"PENDING", "FIX-FIRST"}
+                        )
+                    )
+                )
+                self.task = payload["task"]
+                self.plan_path = payload["planPath"]
+                if not valid:
+                    self.unresolved_binding = True
+                    result.notes.append(
+                        f"seq {event['seq']}: auto-resume refused; "
+                        "state is not a validated in-progress loop"
+                    )
+                else:
+                    self.unresolved_binding = False
+                    result.notes.append(
+                        f"seq {event['seq']}: validated auto-resume for "
+                        f"{self.task!r}"
+                    )
+            elif etype == "orchestration.pending_reset":
+                if payload["resetPending"]:
+                    self.gate = "pending"
+                    self.grant_turn = None
+                    self.grant_pre_turn = False
+                    self.unresolved_reset = True
+                    result.notes.append(
+                        f"seq {event['seq']}: pending reset handoff for "
+                        f"{payload['requestedTask']!r}; execution remains refused"
+                    )
             # All other recognized types are informational; no protocol effect.
 
         # Correlation completeness: any dispatched builder never started?
@@ -308,6 +427,8 @@ class Replayer:
         # persisted gate/path instead of misleading defaults.
         result.gate = self.gate
         result.path = self.path
+        result.unresolved_reset = self.unresolved_reset
+        result.unresolved_binding = self.unresolved_binding
 
         if result.violations:
             result.verdict = Verdict.VIOLATION
@@ -355,6 +476,38 @@ EXPECTED = {
     "stale-granted-new-loop.jsonl": (
         Verdict.VIOLATION,
         "a stale grant from a prior loop cannot authorize a new loop",
+    ),
+    "stale-granted-new-task.jsonl": (
+        Verdict.VIOLATION,
+        "a prior task grant is reset before a new task dispatch",
+    ),
+    "clean-default-no-auto-resume.jsonl": (
+        Verdict.VIOLATION,
+        "a clean default state cannot auto-resume a builder",
+    ),
+    "pending-reset.jsonl": (
+        Verdict.VIOLATION,
+        "a pending read-only reset handoff cannot authorize execution",
+    ),
+    "pending-reset-recovery.jsonl": (
+        Verdict.OK,
+        "an explicit new task reset resolves a pending reset before dispatch",
+    ),
+    "plan-bound-approval-resume.jsonl": (
+        Verdict.OK,
+        "a plan-bound execute checkpoint can resume before explicit approval",
+    ),
+    "active-pending-review-resume.jsonl": (
+        Verdict.OK,
+        "an active PENDING review can resume without requiring a terminal verdict",
+    ),
+    "task-binding-mismatch.jsonl": (
+        Verdict.VIOLATION,
+        "a mismatched task binding remains blocked after a later grant",
+    ),
+    "task-binding-recovery.jsonl": (
+        Verdict.OK,
+        "a valid binding explicitly resolves a prior resume rejection",
     ),
     "turn-grant-immediate.jsonl": (
         Verdict.OK,
@@ -419,6 +572,26 @@ def replay_single(name: str, verbose: bool) -> tuple:
     return result
 
 
+def check_resume_semantics(name: str, result: ReplayResult) -> str | None:
+    """Check the meaning of resume fixtures, not only their final verdict."""
+    if name in {"plan-bound-approval-resume.jsonl",
+                "active-pending-review-resume.jsonl",
+                "task-binding-recovery.jsonl"}:
+        if not any("validated auto-resume" in note for note in result.notes):
+            return "expected a validated auto-resume note"
+    if name == "task-binding-mismatch.jsonl":
+        if not any("auto-resume refused" in note for note in result.notes):
+            return "expected an auto-resume refusal note"
+        if not result.unresolved_binding or not result.violations:
+            return "expected unresolved binding to block dispatch"
+    if name == "pending-reset.jsonl" and not result.violations:
+        return "expected unresolved reset to block dispatch"
+    if name == "pending-reset-recovery.jsonl":
+        if result.unresolved_reset:
+            return "explicit reset recovery should clear the pending reset"
+    return None
+
+
 def main(argv: list) -> int:
     print("ed3d-orchestrate event replay (protocol-only seam, stdlib, deterministic)")
 
@@ -439,11 +612,18 @@ def main(argv: list) -> int:
             return 1
         expected, desc = EXPECTED[name]
         result = replay_single(name, verbose=True)
-        status = "PASS" if result.verdict == expected else "FAIL"
+        semantic_error = check_resume_semantics(name, result)
+        status = (
+            "PASS"
+            if result.verdict == expected and semantic_error is None
+            else "FAIL"
+        )
         print(f"{status} {name}: expected={expected.value} got={result.verdict.value}")
         print(f"      reason: {result.reason}")
+        if semantic_error:
+            print(f"      semantic check: {semantic_error}")
         print(f"      ({desc})")
-        return 0 if result.verdict == expected else 1
+        return 0 if result.verdict == expected and semantic_error is None else 1
 
     # --- full-suite mode ----------------------------------------------------
     failures = []
@@ -455,8 +635,11 @@ def main(argv: list) -> int:
             print(f"FAIL {name}: load error: {exc}")
             continue
         ok = result.verdict == expected
+        semantic_error = check_resume_semantics(name, result)
+        if semantic_error:
+            ok = False
         if not ok:
-            failures.append((name, result.reason))
+            failures.append((name, semantic_error or result.reason))
         mark = "PASS" if ok else "FAIL"
         print(
             f"{mark:4} {name:34} expected={expected.value:9} got={result.verdict.value:9}"

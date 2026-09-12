@@ -1,0 +1,5 @@
+{"seq":1,"type":"orchestration.pending_reset","payload":{"requestedTask":"requested task","priorTask":"old task","priorPlanPath":"/tmp/old-plan.md","resetPending":true,"approval":"pending"}}
+{"seq":2,"type":"orchestration.task_start","payload":{"task":"requested task","phase":"research","approval":"pending","handoffStatus":"not_started"}}
+{"seq":3,"type":"gate.approval","payload":{"approval":"granted","path":"continue"}}
+{"seq":4,"type":"builder.task","payload":{"task":1,"tool":"task","toolCallId":"call_reset_recovered"}}
+{"seq":5,"type":"subagent.started","payload":{"agentName":"ed3d-builder","toolCallId":"call_reset_recovered","model":"gpt-5.5"}}

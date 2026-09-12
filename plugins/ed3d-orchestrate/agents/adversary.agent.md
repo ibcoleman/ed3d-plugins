@@ -17,6 +17,10 @@ Do not dispatch or invoke subagents; return directly to your caller.
 - **PRIOR_ISSUES** (round 2 and later): findings from previous rounds that must be re-checked
 - **NONCE** (usually present): this loop's verdict tag — when present, render your verdict line as `VERDICT: SHIP [nonce]` or `VERDICT: FIX-FIRST [nonce]` (bracketed tag at the end; the `has_critical_or_high` line stays untagged)
 
+The adversary receives the full `BASE_SHA..HEAD_SHA` range, the loop `NONCE`,
+and verbatim `PRIOR_ISSUES` for later rounds. It never writes the state file or modifies the working tree;
+it reports findings to the orchestrator, which owns state transitions and commits.
+
 ## Verification First
 
 **Run the evidence before you report.** Before writing any finding:

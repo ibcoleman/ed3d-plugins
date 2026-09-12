@@ -46,6 +46,37 @@ Whenever a review arms — including re-arming an existing inactive review block
 
 `critical_high` / `advisory` are the counts of findings at those severities in that round's report. Entries are append-only — never rewrite prior entries. An optional `note` string is the entry schema's only sanctioned extension point; no other keys. Rounds legitimately split across `/clear`+resume session boundaries, so per-session dispatch counts undercount the loop; `history` is the authoritative round count for the final report. The round count is the highest `round` value in `history`, not its length — a round can legitimately hold more than one entry (a protocol-failure `PENDING` followed by that round's actual verdict).
 
+### State transition checklist
+
+Before dispatching, branching, or stopping, verify the state-file transition
+against the committed evidence:
+
+- **fresh task:** the canonical state has pending approval, a `not_started`
+  handoff, zero correction attempts, empty history, and a null nonce;
+- **plan binding:** the plan path is absolute and exists, the baseline is
+  valid, the phase is `execute`, and approval remains pending until the later
+  explicit authorization;
+- **approval:** the current task and plan match, then approval is granted
+  immediately before the first builder dispatch;
+- **review arm:** `base_sha` and `head_sha` are distinct valid commits, the
+  outcome handoff is verified, review is active/PENDING at round 1, and the
+  nonce is fresh;
+- **verdict:** persist and re-read `verdict`, open findings,
+  `consecutive_blocks: 0`, and the new history entry before printing or
+  branching;
+- **FIX-FIRST:** verify the fixer commit, refresh `head_sha`, advance the
+  round, set PENDING, and preserve prior findings before re-review;
+- **terminal SHIP:** active is false, verdict is SHIP, consecutive blocks is
+  zero, and the highest history round carries the final verdict.
+
+History is append-only: write one terminal verdict entry per review round.
+The only same-round exception is at most one same-round `PENDING` entry carrying exactly
+the note `"adversary protocol failure"` before that round's terminal entry.
+The round count is the highest round value, not the history length. A verdict
+not written and re-read from the state file does not exist. The hook retains
+atomic temporary-file replacement. It does not protect concurrent model-mediated state edits;
+those writes remain procedural.
+
 ## The Loop
 
 ### 1. Dispatch the Adversary

@@ -140,6 +140,48 @@ def test_existing_hooks_declared_unchanged():
     assert "unchanged" in readme
 
 
+def test_reset_and_pending_handoff_documentation():
+    skill = text(SKILL)
+    readme = text(README)
+    command = text(COMMAND)
+    for body in (skill, readme, command):
+        assert "non-empty task argument always starts a fresh loop" in body
+        assert "empty invocation may resume only" in body
+        assert "reset_pending: true" in body
+        assert "pending record, not authorization" in body
+        assert "execution remains refused" in body
+    assert "clean fresh combination" in skill
+    assert "mismatched state fails closed" in command
+
+
+def test_outcome_handoff_and_bounded_correction_are_documented():
+    skill = text(SKILL)
+    readme = text(README)
+    for body in (skill, readme):
+        assert "Outcome Handoff" in body
+        assert "complete, incomplete, or blocked" in body
+        assert "behavior-specific command/result" in body
+        assert "suite-only claim" in body
+        assert "one correction attempt" in body
+        assert "blocked" in body
+        assert "takeover/replan" in body
+    assert skill.index("Outcome Handoff") < skill.index("arm adversarial review")
+
+
+def test_state_transition_limitations_and_verdict_persistence_are_documented():
+    skill = text(SKILL)
+    readme = text(README)
+    adversarial = text(ROOT / "plugins/ed3d-orchestrate/skills/adversarial-review/SKILL.md")
+    for body in (skill, adversarial):
+        assert "transition checklist" in body
+        assert "persist and re-read" in body
+        assert "history" in body
+        assert "consecutive_blocks" in body
+        assert "terminal SHIP" in body
+    for body in (skill, readme, adversarial):
+        assert "does not protect concurrent model-mediated state edits" in body
+
+
 TESTS = [name for name in globals() if name.startswith("test_")]
 
 

@@ -115,6 +115,17 @@ Message: [commit message]
 [None / List any issues and how resolved]
 ```
 
+### Outcome Handoff
+- AC.1: complete | incomplete | blocked
+  - Changed: file or symbol
+  - Evidence: command -> observed result
+
+Include one concise row for every approved `AC.n` or explicitly requested
+behavior. Every row must state the status, changed location, and a
+behavior-specific command/result. A green pre-existing suite without
+behavior-specific evidence is a suite-only claim; suite-only claim is not completion.
+For `incomplete` or `blocked`, include the remaining gap.
+
 ## What You MUST Do
 
 - Read task specification completely before starting

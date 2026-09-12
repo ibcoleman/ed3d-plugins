@@ -25,6 +25,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 AGENTS = ROOT / "plugins/ed3d-plan-and-execute/agents"
+ADVERSARY = ROOT / "plugins/ed3d-orchestrate/agents/adversary.agent.md"
 
 # The builder/fixer twins ed3d-orchestrate depends on.
 BUILDERS = ("task-implementor-fast",)
@@ -34,6 +35,7 @@ FIXERS = ("task-bug-fixer",)
 CLAUDE_ONLY_KEYS = ("model", "color", "disallowedTools")
 
 RETURN_GUARD = "Do not dispatch or invoke subagents; return directly to your caller."
+OUTCOME_HANDOFF = "### Outcome Handoff"
 
 
 def split_frontmatter(body: str) -> tuple[str, str]:
@@ -48,6 +50,10 @@ def normalize_agent_body(content: str) -> str:
     """Strip the trailing dispatch-return guard line from an .agent.md body so
     the remaining body can be compared against the Claude original."""
     text = content.rstrip("\n")
+    if OUTCOME_HANDOFF in text:
+        start = text.index(OUTCOME_HANDOFF)
+        end = text.index("\n## What You MUST Do", start)
+        text = text[:start].rstrip("\n") + "\n" + text[end:]
     if RETURN_GUARD in text:
         text = text.rsplit(RETURN_GUARD, 1)[0]
     return text.rstrip("\n") + "\n"
@@ -95,6 +101,28 @@ def test_agent_md_carries_dispatch_return_guard():
         assert RETURN_GUARD in body, (
             f"{name}.agent.md must carry the dispatch-return guard line"
         )
+
+
+def test_copilot_agents_require_outcome_handoff():
+    for name, _, agent in agent_pairs():
+        body = agent.read_text(encoding="utf-8")
+        assert body.count(OUTCOME_HANDOFF) == 1, (
+            f"{name}.agent.md must contain one Copilot-only Outcome Handoff section"
+        )
+        assert "one concise row for every approved `AC.n`" in body
+        assert "- AC.1: complete | incomplete | blocked" in body
+        assert "Changed: file or symbol" in body
+        assert "Evidence: command -> observed result" in body
+        assert "suite-only claim is not completion" in body
+        assert "remaining gap" in body
+
+
+def test_adversary_receives_complete_read_only_review_context():
+    body = ADVERSARY.read_text(encoding="utf-8")
+    assert "The adversary receives the full `BASE_SHA..HEAD_SHA` range" in body
+    assert "the loop `NONCE`" in body
+    assert "verbatim `PRIOR_ISSUES`" in body
+    assert "never writes the state file or modifies the working tree" in body
 
 
 TESTS = [name for name in globals() if name.startswith("test_")]
