@@ -65,14 +65,26 @@ leave ownership unbound (or normalize malformed legacy state to
 `recovery_required`), do not dispatch or infer a verdict, and surface
 `ownership-recovery-required`.
 
-Before each dispatch, clear `review.provenance`, set the current
-`review.round`/`review.verdict` to the new `PENDING` review, and reset the
-recovery block to `status: none`, `attempts: 0`, `marker: null`. After the
-parent task request and matching `tool.execution_start`, persist `review.provenance`
-with the current `round` and `dispatch_tool_call_id`.
-After `subagent.started`, persist `reviewer_agent_id`; re-read the state and
-require the round, dispatch ID, and reviewer ID to agree before parsing the
-completion. Missing, malformed, or cross-round provenance keeps the owner
+For a new review round (initial arm or FIX-FIRST advance), clear `review.provenance`,
+set the current `review.round`/`review.verdict` to the new
+`PENDING` review, and reset the recovery block to `status: none`,
+`attempts: 0`, `marker: null` before the first dispatch. After either
+supported parent dispatch observation, persist `review.provenance` with the
+current `round` and `dispatch_tool_call_id`. After `subagent.started`, persist
+`reviewer_agent_id`; re-read the state and require the round, dispatch ID, and
+reviewer ID to agree before parsing the completion.
+
+Same-round reconciliation/protocol retry is a separate state-machine
+transition. Before the sole retry dispatch, persist
+`review.recovery.status: reconciliation_retrying`, `attempts: 1`, and marker
+`review-reconciliation-unavailable`. Preserve that state, the round, nonce,
+history, SHAs, approval, provenance, and ownership through dispatch,
+continuation, and authorized transfer; never reset it as retry
+initialization. If the retry is unavailable again, atomically write
+`reconciliation_exhausted`, attempts `1`, inactive/PENDING/no-verdict state.
+Only a new round or an explicitly authorized same-owner resume from exhausted
+may reset `status: none`, `attempts: 0`, `marker: null` and grant one fresh
+retry budget. Missing, malformed, or cross-round provenance keeps the owner
 blocked with `review-reconciliation-unavailable` and never fabricates a
 verdict.
 
@@ -96,8 +108,8 @@ are unavailable. The parser retains bounded state and scans past 256 KiB.
 
 Missing reviewer completion provenance with an active PENDING review remains
 ordinary owner enforcement. When a bound completed-result check is unavailable,
-the owner remains blocked with `review-reconciliation-unavailable`; use the
-existing one current-round protocol retry, not repeated stop blocking. On the
+persist the retrying marker before using the existing one current-round
+protocol retry, not repeated stop blocking. On the
 second unavailable result, write `reconciliation_exhausted`, attempts `1`,
 `review.active: false`, and `review.verdict: "PENDING"` atomically. no verdict
 exists; the phrase "no verdict exists" is the required operator diagnostic;
@@ -106,8 +118,8 @@ operator choice to re-arm or abandon. A later same-owner resume may reset the
 recovery block and re-arm one attempt, but never fabricates SHIP.
 
 Protocol failure uses this same state transition. Record exactly one
-same-round `protocol failure`/`PENDING` history entry and allow exactly one
-protocol re-dispatch. If the retry again has no parseable verdict, persist the
+same-round `protocol failure`/`PENDING` history entry, persist the retrying
+marker, and allow exactly one protocol re-dispatch. If the retry again has no parseable verdict, persist the
 complete exhausted no-verdict state (`reconciliation_exhausted`,
 `review.active: false`, `review.verdict: "PENDING"`, `attempts: 1`, and the
 diagnostic marker), report that no verdict exists, and require an explicit

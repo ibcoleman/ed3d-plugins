@@ -1,0 +1,6 @@
+{"seq":1,"type":"orchestration.ownership","payload":{"status":"owned","sessionId":"owner-a","transferFrom":"","task":"review task","planPath":"/repo/plan.md","phase":"review"}}
+{"seq":2,"type":"review.reconciliation","payload":{"status":"reconciliation_retrying","attempts":1,"round":1,"marker":"review-reconciliation-unavailable","active":true,"verdict":"PENDING"}}
+{"seq":3,"type":"review.reconciliation","payload":{"status":"reconciliation_exhausted","attempts":1,"round":1,"marker":"review-reconciliation-unavailable","active":false,"verdict":"PENDING"}}
+{"seq":4,"type":"orchestration.ownership","payload":{"status":"transfer_pending","sessionId":"owner-a","transferFrom":"owner-a","task":"review task","planPath":"/repo/plan.md","phase":"review"}}
+{"seq":5,"type":"orchestration.resume","payload":{"sessionId":"owner-b","task":"review task","planPath":"/repo/plan.md","phase":"review","ownershipStatus":"transfer_pending","recordedOwner":"owner-a","transferFrom":"owner-a","explicit":true,"taskMatches":true,"planMatches":true,"reviewActive":false,"reviewVerdict":"PENDING","approval":"pending","preserveRequirements":true}}
+{"seq":6,"type":"review.reconciliation","payload":{"status":"reconciliation_retrying","attempts":1,"round":1,"marker":"review-reconciliation-unavailable","active":true,"verdict":"PENDING"}}

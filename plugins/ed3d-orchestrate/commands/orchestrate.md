@@ -104,16 +104,33 @@ leave the state unowned (or mark malformed legacy state
 `recovery_required`), do not dispatch, do not claim ownership, and surface
 `ownership-recovery-required`; never invent an identity from transcript text.
 
-Before each adversary dispatch, set the current round and `review.verdict` to
-`PENDING`, clear `review.provenance`, and persist `review.provenance` and
-`review.recovery` as
-`status: none`, `attempts: 0`, `marker: null`. Immediately after the parent
-dispatch, persist `review.provenance.round` and
-`dispatch_tool_call_id` from the matching task request/tool-start pair. After
+For a **new review round** (initial arm or a FIX-FIRST advance), set the
+current round and `review.verdict` to `PENDING`, clear `review.provenance`, and
+persist `review.recovery` as `status: none`, `attempts: 0`, `marker: null`
+before dispatching. This is the only ordinary dispatch initialization.
+Immediately after the parent dispatch, persist `review.provenance` with its
+round and `dispatch_tool_call_id` from either supported parent dispatch
+observation. After
 `subagent.started` supplies the reviewer identity, persist
 `reviewer_agent_id` in the same round and re-read all three bindings before
-using the stop hook's reconciliation result. If any required identifier is
-missing or crosses rounds, leave the owner enforcement active and use the
+using the stop hook's reconciliation result.
+
+For the **same-round reconciliation/protocol retry**, do not reinitialize the
+round. First persist `review.recovery` as
+`status: reconciliation_retrying`, `attempts: 1`,
+`marker: review-reconciliation-unavailable`, then emit the sole retry
+dispatch. Preserve that block, the round, nonce, history, SHAs, approval,
+provenance, and ownership across the retry's dispatch, continuation, and
+authorized transfer. A retry may not clear the marker or return attempts to
+zero. If the retry is unavailable again, atomically persist
+`reconciliation_exhausted`, `attempts: 1`, `review.active: false`, and
+`review.verdict: PENDING`.
+
+Only a new review round or an explicitly authorized same-owner resume from
+`reconciliation_exhausted` may reset the recovery block to
+`status: none`, `attempts: 0`, `marker: null`; the authorized exhausted
+re-arm then starts one fresh retry budget. If any required identifier is
+missing or crosses rounds, leave owner enforcement active and use the
 `review-reconciliation-unavailable` diagnostic; do not infer a verdict.
 
 before `/clear` will create a different live session, the current owner must
@@ -140,8 +157,9 @@ an explicit no-verdict operator choice. No verdict exists in that state and
 no SHIP outcome is inferred.
 
 If an adversary response has no parseable verdict, record one same-round
-`protocol failure`/`PENDING` history entry and perform only the existing one
-protocol re-dispatch. If that retry also has no verdict, persist
+`protocol failure`/`PENDING` history entry, persist
+`reconciliation_retrying`/attempts `1`/the diagnostic marker, and perform
+only the existing one protocol re-dispatch. If that retry also has no verdict, persist
 `reconciliation_exhausted`, `review.active: false`,
 `review.verdict: "PENDING"`, `attempts: 1`, and the diagnostic marker in one
 state transition. Report that no verdict exists, allow the stop only through

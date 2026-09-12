@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import json
 import sys
+from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -173,6 +174,63 @@ _SCHEMAS = {
     "hook.end": ({"hook": str}, {}),
 }
 
+_OPTIONAL_SNAPSHOT_EVENTS = {
+    "orchestration.ownership",
+    "orchestration.resume",
+    "review.reconciliation",
+}
+
+
+def _validate_snapshot(snapshot):
+    if not isinstance(snapshot, dict):
+        return "state snapshot must be an object"
+    if set(snapshot) != {"approval", "review"}:
+        return "state snapshot must contain exactly approval and review"
+    if snapshot["approval"] not in {"pending", "granted", "denied"}:
+        return "state snapshot approval is invalid"
+    review = snapshot["review"]
+    if not isinstance(review, dict):
+        return "state snapshot review must be an object"
+    required = {
+        "active",
+        "verdict",
+        "round",
+        "nonce",
+        "history",
+        "baseSha",
+        "headSha",
+        "recovery",
+    }
+    if set(review) != required:
+        return "state snapshot review fields are incomplete"
+    if not isinstance(review["active"], bool):
+        return "state snapshot review.active must be a boolean"
+    if not isinstance(review["verdict"], str):
+        return "state snapshot review.verdict must be a string"
+    if isinstance(review["round"], bool) or not isinstance(review["round"], int):
+        return "state snapshot review.round must be an integer"
+    if not isinstance(review["nonce"], str):
+        return "state snapshot review.nonce must be a string"
+    if not isinstance(review["history"], list):
+        return "state snapshot review.history must be a list"
+    if not isinstance(review["baseSha"], str) or not isinstance(review["headSha"], str):
+        return "state snapshot review SHAs must be strings"
+    recovery = review["recovery"]
+    if not isinstance(recovery, dict) or set(recovery) != {"status", "attempts", "marker"}:
+        return "state snapshot review.recovery is incomplete"
+    if not isinstance(recovery["status"], str):
+        return "state snapshot recovery.status must be a string"
+    if isinstance(recovery["attempts"], bool) or not isinstance(recovery["attempts"], int):
+        return "state snapshot recovery.attempts must be an integer"
+    if recovery["marker"] is not None and not isinstance(recovery["marker"], str):
+        return "state snapshot recovery.marker must be null or a string"
+    return None
+
+
+def _snapshot_from_payload(payload):
+    snapshot = payload.get("snapshot")
+    return deepcopy(snapshot) if isinstance(snapshot, dict) else None
+
 
 def _validate_event(event: dict, prev_seq: int):
     """Return an error string if event is invalid, else None (strict schema)."""
@@ -195,8 +253,9 @@ def _validate_event(event: dict, prev_seq: int):
     if not isinstance(payload, dict):
         return "payload must be a JSON object"
     required, enums = _SCHEMAS[etype]
+    optional = {"snapshot": dict} if etype in _OPTIONAL_SNAPSHOT_EVENTS else {}
     missing = set(required) - set(payload)
-    extra = set(payload) - set(required)
+    extra = set(payload) - set(required) - set(optional)
     if missing:
         return f"payload missing required key(s) {sorted(missing)}"
     if extra:
@@ -209,6 +268,9 @@ def _validate_event(event: dict, prev_seq: int):
             return f"payload.{key} must be a string, got {type(val).__name__}"
         if typ is bool and not isinstance(val, bool):
             return f"payload.{key} must be a boolean, got {type(val).__name__}"
+    for key, typ in optional.items():
+        if key in payload and not isinstance(payload[key], typ):
+            return f"payload.{key} must be an object, got {type(payload[key]).__name__}"
     for key, allowed in enums.items():
         if payload[key] not in allowed:
             return (
@@ -241,6 +303,10 @@ def _validate_event(event: dict, prev_seq: int):
             return "auto-resume requires a non-empty task"
     elif etype == "review.reconciliation" and payload["round"] < 1:
         return "reconciliation round must be positive"
+    if "snapshot" in payload:
+        snapshot_error = _validate_snapshot(payload["snapshot"])
+        if snapshot_error:
+            return snapshot_error
     return None
 
 
@@ -266,6 +332,11 @@ class ReplayResult:
     preserved_requirements: bool = True
     review_active: bool = False
     review_verdict: str = "PENDING"
+    review_round: int = 1
+    review_nonce: str = ""
+    review_history: list = field(default_factory=list)
+    base_sha: str = ""
+    head_sha: str = ""
 
 
 class Replayer:
@@ -291,10 +362,59 @@ class Replayer:
         self.review_active = False
         self.review_verdict = "PENDING"
         self.review_round = 1
+        self.review_nonce = ""
+        self.review_history = []
+        self.base_sha = ""
+        self.head_sha = ""
         self.state_bound = False
         self.rearm_authorized = False
         self._builders = {}  # toolCallId -> task number (dispatched, uncorrelated yet)
         self._started = set()  # toolCallIds with a subagent.started
+
+    def _state_snapshot(self):
+        return {
+            "approval": self.gate,
+            "review": {
+                "active": self.review_active,
+                "verdict": self.review_verdict,
+                "round": self.review_round,
+                "nonce": self.review_nonce,
+                "history": deepcopy(self.review_history),
+                "baseSha": self.base_sha,
+                "headSha": self.head_sha,
+                "recovery": {
+                    "status": self.recovery_status,
+                    "attempts": self.recovery_attempts,
+                    "marker": (
+                        "review-reconciliation-unavailable"
+                        if self.recovery_status in {
+                            "reconciliation_retrying",
+                            "reconciliation_exhausted",
+                        }
+                        else None
+                    ),
+                },
+            },
+        }
+
+    def _snapshot_matches(self, snapshot):
+        return snapshot is None or snapshot == self._state_snapshot()
+
+    def _apply_snapshot(self, snapshot):
+        if snapshot is None:
+            return
+        review = snapshot["review"]
+        self.gate = snapshot["approval"]
+        self.review_active = review["active"]
+        self.review_verdict = review["verdict"]
+        self.review_round = review["round"]
+        self.review_nonce = review["nonce"]
+        self.review_history = deepcopy(review["history"])
+        self.base_sha = review["baseSha"]
+        self.head_sha = review["headSha"]
+        recovery = review["recovery"]
+        self.recovery_status = recovery["status"]
+        self.recovery_attempts = recovery["attempts"]
 
     def replay(self, events: list) -> ReplayResult:
         result = ReplayResult()
@@ -316,6 +436,11 @@ class Replayer:
                 result.recovery_attempts = self.recovery_attempts
                 result.review_active = self.review_active
                 result.review_verdict = self.review_verdict
+                result.review_round = self.review_round
+                result.review_nonce = self.review_nonce
+                result.review_history = deepcopy(self.review_history)
+                result.base_sha = self.base_sha
+                result.head_sha = self.head_sha
                 return result
             prev_seq = event["seq"]
             result.events_processed = idx + 1
@@ -461,6 +586,21 @@ class Replayer:
                 self.grant_pre_turn = False
                 self.unresolved_reset = False
                 self.unresolved_binding = False
+                self.ownership = "unowned"
+                self.owner_session = ""
+                self.transfer_from = ""
+                self.recovery_status = "none"
+                self.recovery_attempts = 0
+                self.rearm_authorized = False
+                self.phase = payload["phase"]
+                self.review_active = False
+                self.review_verdict = "PENDING"
+                self.review_round = 1
+                self.review_nonce = ""
+                self.review_history = []
+                self.base_sha = ""
+                self.head_sha = ""
+                self.state_bound = False
                 result.notes.append(
                     f"seq {event['seq']}: task start reset control-plane state "
                     f"for {self.task!r}"
@@ -529,6 +669,7 @@ class Replayer:
                         f"{payload['requestedTask']!r}; execution remains refused"
                     )
             elif etype == "orchestration.ownership":
+                snapshot = _snapshot_from_payload(payload)
                 ownership_transition_valid = not self.state_bound or (
                     payload["status"] == self.ownership
                     and payload["sessionId"] == self.owner_session
@@ -551,6 +692,12 @@ class Replayer:
                         "match the persisted state or authorized transfer"
                     )
                     continue
+                if self.state_bound and not self._snapshot_matches(snapshot):
+                    result.violations.append(
+                        f"seq {event['seq']}: ownership transition changed "
+                        "the persisted approval/review nonce/history/SHA snapshot"
+                    )
+                    continue
                 if payload["status"] == "recovery_required" and (
                     payload["sessionId"] or payload["transferFrom"]
                 ):
@@ -558,25 +705,33 @@ class Replayer:
                         f"seq {event['seq']}: recovery_required state cannot "
                         "claim a live owner"
                     )
+                    continue
                 self.ownership = payload["status"]
                 self.owner_session = payload["sessionId"]
                 self.transfer_from = payload["transferFrom"]
                 self.task = payload["task"]
                 self.plan_path = payload["planPath"]
                 self.phase = payload["phase"]
-                self.review_active = payload["phase"] == "review"
-                self.review_verdict = "PENDING"
-                self.review_round = 1
-                self.gate = "pending"
-                self.recovery_status = "none"
-                self.recovery_attempts = 0
-                self.rearm_authorized = False
+                if not self.state_bound:
+                    self.review_active = payload["phase"] == "review"
+                    self.review_verdict = "PENDING"
+                    self.review_round = 1
+                    self.gate = "pending"
+                    self.recovery_status = "none"
+                    self.recovery_attempts = 0
+                    self.rearm_authorized = False
+                    self.review_nonce = ""
+                    self.review_history = []
+                    self.base_sha = ""
+                    self.head_sha = ""
+                    self._apply_snapshot(snapshot)
                 self.state_bound = True
                 result.notes.append(
                     f"seq {event['seq']}: ownership state {self.ownership!r} "
                     f"for {self.owner_session or 'no session'}"
                 )
             elif etype == "orchestration.resume":
+                snapshot = _snapshot_from_payload(payload)
                 actual_task_match = self.task is None or payload["task"] == self.task
                 actual_plan_match = self.plan_path == "" or payload["planPath"] == self.plan_path
                 actual_phase_match = self.phase == "" or payload["phase"] == self.phase
@@ -592,6 +747,7 @@ class Replayer:
                         and payload["reviewVerdict"] == self.review_verdict
                     )
                 )
+                claimed_snapshot_matches = self._snapshot_matches(snapshot)
                 valid_binding = (
                     payload["explicit"]
                     and payload["sessionId"].strip()
@@ -603,6 +759,7 @@ class Replayer:
                     and payload["planMatches"] == actual_plan_match
                     and claimed_state_matches
                     and claimed_review_matches
+                    and claimed_snapshot_matches
                     and payload["preserveRequirements"]
                     and payload["approval"] == self.gate
                 )
@@ -658,7 +815,14 @@ class Replayer:
                         "approval/review requirements"
                     )
             elif etype == "review.reconciliation":
+                snapshot = _snapshot_from_payload(payload)
                 transition_valid = True
+                if not self._snapshot_matches(snapshot):
+                    transition_valid = False
+                    result.violations.append(
+                        f"seq {event['seq']}: reconciliation changed the "
+                        "persisted approval/review nonce/history/SHA snapshot"
+                    )
                 valid_shape = (
                     payload["attempts"] in {0, 1}
                     and payload["round"] == self.review_round
@@ -701,8 +865,16 @@ class Replayer:
                         )
                 elif payload["status"] == "none":
                     if (
-                        self.recovery_status == "reconciliation_exhausted"
-                        or payload["verdict"] != "PENDING"
+                        self.recovery_status in {
+                            "reconciliation_retrying",
+                            "reconciliation_exhausted",
+                        }
+                        and not self.rearm_authorized
+                    ) or (
+                        payload["attempts"] != 0
+                        or payload["marker"] not in {"", None}
+                    ) or (
+                        payload["verdict"] != "PENDING"
                     ):
                         transition_valid = False
                         result.violations.append(
@@ -739,6 +911,11 @@ class Replayer:
         result.preserved_requirements = self.preserved_requirements
         result.review_active = self.review_active
         result.review_verdict = self.review_verdict
+        result.review_round = self.review_round
+        result.review_nonce = self.review_nonce
+        result.review_history = deepcopy(self.review_history)
+        result.base_sha = self.base_sha
+        result.head_sha = self.head_sha
 
         if result.violations:
             result.verdict = Verdict.VIOLATION
@@ -887,6 +1064,30 @@ EXPECTED = {
         Verdict.VIOLATION,
         "exhausted recovery cannot be mutated into a verdict",
     ),
+    "exhausted-transfer-retry.jsonl": (
+        Verdict.VIOLATION,
+        "ownership transfer cannot reset an exhausted retry budget",
+    ),
+    "ownership-observation-retry.jsonl": (
+        Verdict.VIOLATION,
+        "repeated ownership observations cannot reset a consumed retry budget",
+    ),
+    "retry-reset-retry.jsonl": (
+        Verdict.VIOLATION,
+        "an unauthorized none transition cannot reset and reuse the retry budget",
+    ),
+    "fresh-task-resets-owner-review.jsonl": (
+        Verdict.OK,
+        "a fresh task clears prior ownership, review, and recovery state",
+    ),
+    "snapshot-preserving-transfer.jsonl": (
+        Verdict.OK,
+        "authorized transfer carries the actual approval, review, nonce, history, and SHA snapshot",
+    ),
+    "snapshot-mutation-transfer.jsonl": (
+        Verdict.VIOLATION,
+        "ownership cannot mutate the carried approval, review, nonce, history, or SHA snapshot",
+    ),
 }
 
 
@@ -973,6 +1174,41 @@ def check_resume_semantics(name: str, result: ReplayResult) -> str | None:
     if name == "verdict-mutation-after-exhaustion.jsonl":
         if result.recovery_status != "reconciliation_exhausted" or result.review_verdict != "PENDING":
             return "verdict mutation changed the persisted exhausted state"
+    if name == "exhausted-transfer-retry.jsonl":
+        if result.recovery_status != "reconciliation_exhausted" or result.recovery_attempts != 1:
+            return "ownership transfer reset exhausted recovery or authorized a retry"
+    if name == "ownership-observation-retry.jsonl":
+        if not any("reconciliation retry is repeated" in violation for violation in result.violations):
+            return "repeated ownership observation did not preserve the consumed retry budget"
+    if name == "retry-reset-retry.jsonl":
+        if not any("recovery state cannot mutate" in violation for violation in result.violations):
+            return "none transition reset the consumed retry budget"
+    if name == "fresh-task-resets-owner-review.jsonl":
+        if (
+            result.ownership != "unowned"
+            or result.owner_session
+            or result.transfer_from
+            or result.review_active
+            or result.review_verdict != "PENDING"
+            or result.recovery_status != "none"
+            or result.recovery_attempts != 0
+        ):
+            return "fresh task retained task-scoped owner, review, or recovery state"
+    if name == "snapshot-preserving-transfer.jsonl":
+        if (
+            result.review_nonce != "abcdef12"
+            or result.review_history != [
+                {"round": 1, "verdict": "FIX-FIRST", "critical_high": 1, "advisory": 0}
+            ]
+            or result.base_sha != "base-sha"
+            or result.head_sha != "head-sha"
+            or result.gate != "pending"
+            or not result.review_active
+        ):
+            return "transfer did not preserve the actual review snapshot"
+    if name == "snapshot-mutation-transfer.jsonl":
+        if not any("nonce/history/SHA snapshot" in violation for violation in result.violations):
+            return "snapshot mutation was not rejected"
     return None
 
 

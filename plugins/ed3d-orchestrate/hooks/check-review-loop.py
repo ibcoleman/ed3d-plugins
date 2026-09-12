@@ -83,7 +83,12 @@ def owner_outcome(state, event):
         return "recovery"
     if status == "owned":
         owner_id = ownership.get("session_id")
-        if not isinstance(owner_id, str) or not owner_id:
+        if (
+            not isinstance(owner_id, str)
+            or not owner_id
+            or "transfer_from" not in ownership
+            or ownership.get("transfer_from") is not None
+        ):
             return "recovery"
         return "owner" if live_id == owner_id else "silent"
     if status == "transfer_pending":
@@ -134,18 +139,22 @@ def bump_consecutive_blocks(state, review, consecutive, state_path):
         pass
 
 
-def _tool_call_ids(event):
+def _expected_tool_call_count(event, expected_id):
     data = event.get("data")
     if not isinstance(data, dict):
-        return []
+        return 0
     requests = data.get("toolRequests")
     if not isinstance(requests, list):
-        return []
-    return [
-        request.get("toolCallId")
-        for request in requests
-        if isinstance(request, dict) and isinstance(request.get("toolCallId"), str)
-    ]
+        return 0
+    return min(
+        2,
+        sum(
+            1
+            for request in requests
+            if isinstance(request, dict)
+            and request.get("toolCallId") == expected_id
+        ),
+    )
 
 
 def _data_tool_call_id(event):
@@ -226,12 +235,12 @@ def reconcile_transcript(path, review):
     if not path or not os.path.isfile(path):
         return "unavailable"
 
-    assistant_dispatch_ids = set()
-    start_dispatch_ids = set()
+    assistant_dispatch_observations = 0
+    start_dispatch_observations = 0
     candidate_started = False
     candidate_completed = False
     candidate_invalid = False
-    latest_message = None
+    latest_verdict = None
 
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as handle:
@@ -246,19 +255,28 @@ def reconcile_transcript(path, review):
                 if event_type == "assistant.message":
                     agent_id = event.get("agentId")
                     if agent_id is None:
-                        ids = _tool_call_ids(event)
-                        assistant_dispatch_ids.update(ids)
+                        count = _expected_tool_call_count(event, dispatch_id)
+                        if count:
+                            if assistant_dispatch_observations:
+                                candidate_invalid = True
+                            assistant_dispatch_observations = min(
+                                2, assistant_dispatch_observations + count
+                            )
                     elif agent_id == reviewer_id:
                         data = event.get("data")
                         content = data.get("content") if isinstance(data, dict) else None
                         if candidate_started and not candidate_completed:
-                            latest_message = content
+                            latest_verdict = _terminal_verdict(content, nonce)
                         elif candidate_completed:
                             candidate_invalid = True
                 elif event_type == "tool.execution_start":
                     tool_call_id = _data_tool_call_id(event)
-                    if tool_call_id:
-                        start_dispatch_ids.add(tool_call_id)
+                    if tool_call_id == dispatch_id:
+                        if start_dispatch_observations:
+                            candidate_invalid = True
+                        start_dispatch_observations = min(
+                            2, start_dispatch_observations + 1
+                        )
                 elif event_type == "subagent.started":
                     tool_call_id = _data_tool_call_id(event)
                     agent_id = event.get("agentId")
@@ -268,8 +286,10 @@ def reconcile_transcript(path, review):
                         if candidate_started:
                             candidate_invalid = True
                         if (
-                            dispatch_id in assistant_dispatch_ids
-                            and dispatch_id in start_dispatch_ids
+                            (
+                                assistant_dispatch_observations
+                                or start_dispatch_observations
+                            )
                             and agent_id == reviewer_id
                             and agent_name in ADVERSARY_NAMES
                         ):
@@ -300,10 +320,11 @@ def reconcile_transcript(path, review):
         candidate_started
         and candidate_completed
         and not candidate_invalid
-        and latest_message is not None
+        and latest_verdict in {"SHIP", "FIX-FIRST"}
     ):
-        verdict = _terminal_verdict(latest_message, nonce)
-        return verdict if verdict else "unavailable"
+        return latest_verdict
+    if candidate_started and not candidate_completed and not candidate_invalid:
+        return None
     return "unavailable"
 
 

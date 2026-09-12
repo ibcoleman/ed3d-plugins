@@ -150,6 +150,26 @@ def lineage_transcript(
     ) + "\n"
 
 
+def lineage_without_dispatch_observation(transcript, event_type):
+    lines = []
+    for line in transcript.splitlines():
+        event = json.loads(line)
+        if event.get("type") == event_type and "agentId" not in event:
+            continue
+        lines.append(line)
+    return "\n".join(lines) + "\n"
+
+
+def duplicate_dispatch_observation(transcript, event_type):
+    lines = transcript.splitlines()
+    for index, line in enumerate(lines):
+        event = json.loads(line)
+        if event.get("type") == event_type and "agentId" not in event:
+            lines.insert(index + 1, line)
+            break
+    return "\n".join(lines) + "\n"
+
+
 def reason_ok(decision, expected, needle=None):
     return decision is not None and decision.get("decision") == expected and (needle is None or needle in decision.get("reason", ""))
 
@@ -255,6 +275,29 @@ def main():
     check("malformed transfer -> ownership recovery allow", reason_ok(decision, "allow", "ownership-recovery-required"), out)
     check("malformed transfer leaves state unchanged", state_after(path) == malformed_transfer)
     shutil.rmtree(root, ignore_errors=True)
+    malformed_owned = active()
+    malformed_owned["ownership"]["transfer_from"] = "stale-owner"
+    root, path, _, out, decision = run(malformed_owned)
+    check(
+        "malformed owned binding -> ownership recovery allow",
+        reason_ok(decision, "allow", "ownership-recovery-required"),
+        out,
+    )
+    check("malformed owned binding leaves state unchanged", state_after(path) == malformed_owned)
+    shutil.rmtree(root, ignore_errors=True)
+    malformed_owned_missing = active()
+    del malformed_owned_missing["ownership"]["transfer_from"]
+    root, path, _, out, decision = run(malformed_owned_missing)
+    check(
+        "missing owned transfer binding -> ownership recovery allow",
+        reason_ok(decision, "allow", "ownership-recovery-required"),
+        out,
+    )
+    check(
+        "missing owned transfer binding leaves state unchanged",
+        state_after(path) == malformed_owned_missing,
+    )
+    shutil.rmtree(root, ignore_errors=True)
     root, path, _, out, decision = run(active(), event_extra={"sessionId": "other-session"})
     check("legacy/identity mismatch does not block", out == "" and decision is None)
     shutil.rmtree(root, ignore_errors=True)
@@ -273,6 +316,66 @@ def main():
     genuine = lineage_transcript()
     root, _, _, out, decision = run(lineage_state(provenance=provenance), genuine)
     check("current SHIP lineage -> reconciliation block", reason_ok(decision, "block", "nonce-tagged SHIP verdict marker"), out)
+    shutil.rmtree(root, ignore_errors=True)
+    request_only = lineage_without_dispatch_observation(genuine, "tool.execution_start")
+    root, _, _, out, decision = run(lineage_state(provenance=provenance), request_only)
+    check(
+        "request-only dispatch observation -> reconciliation block",
+        reason_ok(decision, "block", "nonce-tagged SHIP verdict marker"),
+        out,
+    )
+    shutil.rmtree(root, ignore_errors=True)
+    start_only = lineage_without_dispatch_observation(genuine, "assistant.message")
+    start_only = "\n".join(
+        line
+        for line in start_only.splitlines()
+        if not (
+            json.loads(line).get("type") == "assistant.message"
+            and "agentId" not in json.loads(line)
+        )
+    ) + "\n"
+    root, _, _, out, decision = run(lineage_state(provenance=provenance), start_only)
+    check(
+        "start-only dispatch observation -> reconciliation block",
+        reason_ok(decision, "block", "nonce-tagged SHIP verdict marker"),
+        out,
+    )
+    shutil.rmtree(root, ignore_errors=True)
+    paired = genuine
+    root, _, _, out, decision = run(lineage_state(provenance=provenance), paired)
+    check(
+        "paired dispatch observations -> one reconciliation block",
+        reason_ok(decision, "block", "nonce-tagged SHIP verdict marker"),
+        out,
+    )
+    shutil.rmtree(root, ignore_errors=True)
+    duplicate_request = duplicate_dispatch_observation(genuine, "assistant.message")
+    root, _, _, out, decision = run(lineage_state(provenance=provenance), duplicate_request)
+    check(
+        "duplicate request observation -> unavailable owner block",
+        reason_ok(decision, "block", "review-reconciliation-unavailable"),
+        out,
+    )
+    shutil.rmtree(root, ignore_errors=True)
+    duplicate_start = duplicate_dispatch_observation(genuine, "tool.execution_start")
+    root, _, _, out, decision = run(lineage_state(provenance=provenance), duplicate_start)
+    check(
+        "duplicate start observation -> unavailable owner block",
+        reason_ok(decision, "block", "review-reconciliation-unavailable"),
+        out,
+    )
+    shutil.rmtree(root, ignore_errors=True)
+    in_flight = "\n".join(
+        line
+        for line in genuine.splitlines()
+        if json.loads(line).get("type") != "subagent.completed"
+    ) + "\n"
+    root, _, _, out, decision = run(lineage_state(provenance=provenance), in_flight)
+    check(
+        "in-flight dispatch without completion -> ordinary pending block",
+        reason_ok(decision, "block", "review loop active") and "review-reconciliation-unavailable" not in decision["reason"],
+        out,
+    )
     shutil.rmtree(root, ignore_errors=True)
     root, _, _, out, decision = run(
         lineage_state(provenance=provenance),
@@ -395,6 +498,28 @@ def main():
     large_prefix = "".join(json.dumps({"type": "noise", "data": "x" * 1024}) + "\n" for _ in range(300))
     root, _, _, out, decision = run(lineage_state(provenance=provenance), large_prefix + genuine)
     check("streamed lineage beyond 256 KiB -> reconciliation block", reason_ok(decision, "block", "nonce-tagged SHIP verdict marker"), out)
+    shutil.rmtree(root, ignore_errors=True)
+    unrelated_prefix = "".join(
+        json.dumps(
+            {
+                "type": "assistant.message",
+                "data": {
+                    "toolRequests": [
+                        {"toolCallId": "unrelated-%d" % index, "name": "view"}
+                    ],
+                    "content": "unrelated " + ("x" * 4096),
+                },
+            }
+        )
+        + "\n"
+        for index in range(2000)
+    )
+    root, _, _, out, decision = run(lineage_state(provenance=provenance), unrelated_prefix + genuine)
+    check(
+        "many unrelated records and content retain current lineage",
+        reason_ok(decision, "block", "nonce-tagged SHIP verdict marker"),
+        out,
+    )
     shutil.rmtree(root, ignore_errors=True)
     root, _, _, out, decision = run(active(verdict="PENDING"), genuine)
     check("missing provenance -> ordinary pending block", reason_ok(decision, "block", "review loop active"), out)
