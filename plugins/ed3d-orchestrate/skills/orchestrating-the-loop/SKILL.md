@@ -29,6 +29,11 @@ At loop start, create `.ed3d/orchestrate-state.json` in the working directory of
     "correction_attempts": 0,
     "remaining_outcomes": []
   },
+  "ownership": {
+    "status": "unowned",
+    "session_id": null,
+    "transfer_from": null
+  },
   "review": {
     "active": false,
     "round": 0,
@@ -37,7 +42,13 @@ At loop start, create `.ed3d/orchestrate-state.json` in the working directory of
     "open_critical_high": [],
     "consecutive_blocks": 0,
     "history": [],
-    "nonce": null
+    "nonce": null,
+    "provenance": null,
+    "recovery": {
+      "status": "none",
+      "attempts": 0,
+      "marker": null
+    }
   }
 }
 ```
@@ -104,6 +115,107 @@ The review block's `history` field is the append-only round record:
 - **The loop nonce.** Whenever a review arms — including re-arming an existing inactive review block for a new loop — generate a fresh nonce: 8 lowercase hex characters, written as `review.nonce` (overwrite any prior value; never carry a nonce across loops). It persists for the whole loop, across every round and `/clear`+resume, and travels in every adversary dispatch as `NONCE: <value>`. The guardrail hook matches rendered verdicts by this tag, which is what keeps the literal `VERDICT: SHIP` strings in skill and agent prose from being mistaken for a real verdict.
 - **`verdict: "PENDING"` means an adversary dispatch is in flight — at every round.** Round 1 starts PENDING; after every FIX-FIRST round, once the fixer's commits are verified and `head_sha` is refreshed, re-arm in one state write: `round: round + 1` and `verdict: "PENDING"` together, before re-dispatching the adversary. While verdict is PENDING, the write-guard hook mechanically blocks write-class tool calls from subagents — that is the enforcement layer behind the adversary's no-writes rule, so treat any adversary claim of having fixed the state file or the working tree as suspect and verify against git.
 - On completion (SHIP or operator-accepted), set `review.active: false`, reset `consecutive_blocks: 0`, and leave the final `verdict` in place. The state file is the audit trail — the operator can reconstruct every transition from it after the fact.
+
+### Ownership and review-lineage contract
+
+The canonical state always includes an explicit ownership block. A fresh
+state starts with `"ownership": {"status": "unowned", "session_id": null,
+"transfer_from": null}`. The only statuses are `unowned`, `owned`,
+`transfer_pending`, and `recovery_required`; legacy state without this block
+is never treated as owned. An active review may also carry `"provenance":
+null` until dispatch, then the current `round`,
+`dispatch_tool_call_id`, and `reviewer_agent_id`. These are evidence bindings,
+not authentication claims.
+
+The command distinguishes exactly three resume paths:
+
+| Path | Entry and state action |
+|---|---|
+| **same-owner continuation** | an identity-bearing `resume` matches the persisted owner, task, absolute plan, and phase; preserve approval, review, nonce, history, and SHAs |
+| **authorized ownership transfer** | `transfer_pending` retains the old `session_id` and matching `transfer_from`; explicit `resume` with a different live session and matching task/plan/phase replaces the owner and clears `transfer_from` |
+| **explicit legacy recovery** | missing/malformed ownership or `recovery_required`; explicit identity-bearing `resume` with matching task and absolute plan normalizes ownership without inferring a dispatch or verdict |
+
+An unauthorized non-transfer session is refused without mutation. While
+`transfer_pending`, the old owner's stop is allowed so `/clear` can complete;
+the new session cannot inherit ownership before the explicit claim. Stop events
+accept both `sessionId` and `session_id`. Missing identity or invalid binding
+uses a supported allow marker `ownership-recovery-required`; it never mutates
+the state or claims a review result.
+
+### Executable owner/provenance binding checklist
+
+At the fresh-task transition, read the live session identity before doing
+work. If it is present, write `ownership.status: owned` with the exact
+`session_id`, current task, absolute plan, and phase, then re-read the state
+file. If the session identity is unavailable, keep the state unowned (or set
+malformed legacy state to `recovery_required`), do not dispatch or claim a
+verdict, and report `ownership-recovery-required`; identity must never be
+guessed from a transcript or tool result.
+
+For a new review round (initial arm or FIX-FIRST advance), clear `review.provenance`,
+set the current round to `PENDING`, and reset
+`review.recovery` to `status: none`, `attempts: 0`, `marker: null` before the
+first dispatch. After either supported parent dispatch observation, persist `review.provenance`
+with its `round` and `dispatch_tool_call_id`; after
+`subagent.started`, persist `reviewer_agent_id`. Re-read the state after each
+write and require the round, dispatch ID, and reviewer ID to match before
+parsing completion.
+
+Same-round reconciliation/protocol retry is a distinct transition. Before
+the sole retry dispatch, persist `review.recovery.status:
+reconciliation_retrying`, `attempts: 1`, and marker
+`review-reconciliation-unavailable`. Do not clear or reinitialize the round.
+Preserve that block and the approval, ownership, nonce, history, and SHAs
+across dispatch, continuation, and authorized transfer. Do not preserve the
+failed dispatch/reviewer provenance: clear only `review.provenance` before
+the retry, then replace it with the new observed dispatch tool-call ID and
+reviewer agent ID from that retry's parent dispatch/start pair. A retry may
+not clear the recovery marker or return attempts to zero. A second
+unavailable result writes `reconciliation_exhausted`, attempts `1`, inactive
+PENDING/no-verdict state. Only a new round or an explicitly authorized
+same-owner resume from exhausted may reset `status: none`, `attempts: 0`,
+`marker: null` and grant one fresh budget. A missing or cross-round binding
+remains owner-enforced and uses `review-reconciliation-unavailable`; it never
+becomes a verdict or an allow.
+
+If `/clear` will hand off to a different live session, the old owner must,
+before `/clear`, write and re-read `ownership.status: transfer_pending` with
+`transfer_from` equal to its `session_id`, preserving the task, absolute plan,
+phase, approval, review requirements, round, nonce, and history. `/clear` is
+only a context handoff; it does not itself approve or transfer ownership. The
+new session must execute the explicit `resume` claim, validate identity and
+bindings, replace the owner, and clear `transfer_from` before continuing.
+Same-owner continuation preserves `owned` and does not require
+`transfer_pending`.
+
+The current review result is bound by `review.provenance`, not transcript text.
+The hook performs a bounded streaming JSONL scan from the beginning of the
+transcript. It joins the parent dispatch and `tool.execution_start` by
+`toolCallId`, then `subagent.started`, the expected reviewer `assistant.message`,
+and `subagent.completed`. Only the latest reviewer message with the exact
+two-line nonce-tagged verdict is evidence; quoted or fenced examples,
+duplicates, trailing content, stale dispatches, and `tool.execution_complete`
+result text are rejected. The parser retains fixed-size state and therefore
+handles transcripts beyond 256 KiB without a tail scan.
+
+Missing completion lineage never weakens a valid owner's ordinary PENDING
+enforcement. A complete scan that cannot prove an already-bound result first
+persists the retrying marker and uses the existing single current-round retry
+budget. After one retry, the explicit
+`reconciliation_exhausted` state sets `review.active: false`,
+`review.verdict: "PENDING"`, and `review.recovery.attempts: 1`; stopping is
+allowed only with a no-verdict diagnostic and an explicit operator choice.
+The exhausted state means no verdict exists, never SHIP. A later same-owner
+resume may re-arm one fresh attempt, not fabricate a verdict.
+
+Protocol failure follows the same bounded rule: record the one allowed
+same-round `PENDING`/`protocol failure` entry, persist the retrying marker, and
+then perform at most one protocol re-dispatch. If that retry produces no parseable verdict, persist
+`reconciliation_exhausted`, `review.active: false`,
+`review.verdict: "PENDING"`, `attempts: 1`, and the diagnostic marker
+atomically. The final report must say no verdict exists and ask for an
+explicit operator choice to re-arm or abandon; it must never convert this
+state to SHIP.
 
 ### State transition checklist
 
@@ -199,7 +311,7 @@ This gate is an **operator approval checkpoint**, not merely a context-managemen
 2. Record `base_sha` in the state file from the current `HEAD` commit, then update the state file: `phase: "execute"`, `plan_path` set to the plan document's absolute path, and `gate.approval: "pending"`. The approval write and the terminal turn land together — one state write records that the gate passed.
 3. **End your turn** — this is the **terminal plan-review turn**. The plan-review pass ends your turn with `gate.approval: "pending"` recorded; it does not roll into execution. Present the operator approval checkpoint:
    - the plan-review verdict, in one or two lines, and
-   - the two approval paths: reply **continue** to approve and start the builders in this context, or run `/clear` and then `/ed3d-orchestrate:orchestrate resume` to approve and continue with a fresh context.
+   - the two approval paths: reply **continue** to approve and start the builders in this context, or first record `transfer_pending`, run `/clear`, then `/ed3d-orchestrate:orchestrate resume` and reply **continue** in the fresh context. `/clear` alone is only a context handoff, not approval or ownership transfer.
 4. Do not dispatch builders in the same turn in which the gate passed — `gate.approval` is still `"pending"` in the state file. Builder dispatch begins only after the operator's approval response (`continue`, or `/clear` + resume followed by `continue`) has been processed, in a **later** turn. On authorization, write `gate.approval: "granted"` to the state file in that same turn, **immediately before** the first builder dispatch — the approval write always precedes the dispatch; never dispatch first. This stop is safe: the guardrail hook only blocks stops while the review loop is active, which it is not yet.
 
 On resume, the loop reads the state file (`phase: "execute"`) and the plan document at `plan_path` and starts Phase 4 directly — but resuming alone does not grant approval. A **bare auto-resume is refused**: if the state file records `gate.approval: "pending"` (or the field is absent, malformed, or partial), resuming into `phase: "execute"` does not authorize builders. The loop re-presents the approval checkpoint and waits for the operator's explicit `continue` (the `/clear` + resume path likewise requires the explicit `continue` response to be processed before dispatch). Only an explicit authorization written as `gate.approval: "granted"` in the state file — in the same turn, immediately before the first dispatch — opens the door to builders. Completed phases are never repeated; nothing is lost to `/clear` — the plan, the commits, and the state file all live on disk.
@@ -290,6 +402,18 @@ earlier, at the context-handoff gate).
 Engage the `adversarial-review` skill (ed3d-orchestrate) only after verifying `base_sha` and `head_sha` are valid commits. It runs the review loop: adversary dispatch → verdict → fix critical/high → re-review, until SHIP or the round cap, then the operator circuit-breaker. The guardrail hook will block premature session stops while `review.active` is true — that is by design; if it blocks after an adversary verdict, commit the verdict to the state file immediately, including `consecutive_blocks: 0`, rather than fighting the hook.
 
 ## Phase 6: Assemble and Report
+
+If review recovery is exhausted or an adversary protocol retry has failed,
+do not run the terminal SHIP report. Re-read and verify the complete
+no-verdict invariant (`review.active: false`, `review.verdict: "PENDING"`,
+`review.recovery.status: "reconciliation_exhausted"`,
+`review.recovery.attempts: 1`, and marker
+`review-reconciliation-unavailable`), report the protocol failure and that no
+verdict exists, and require an explicit operator choice to re-arm or abandon.
+Re-arm
+requires a same-owner `resume` in the preserved task/plan/phase; it clears the
+exhaustion marker and starts exactly one fresh attempt. Abandonment leaves the
+no-verdict state. Neither choice may report or write SHIP.
 
 Before the final report, re-read `.ed3d/orchestrate-state.json` and verify the terminal state: `review.active: false`, `review.verdict: "SHIP"`, `review.consecutive_blocks: 0`, and the highest-round `review.history` entry matches the final verdict. If any check fails, fix the state file before reporting or stopping.
 

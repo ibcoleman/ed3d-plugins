@@ -1,0 +1,8 @@
+{"seq":1,"type":"orchestration.ownership","payload":{"status":"owned","sessionId":"owner-a","transferFrom":"","task":"review task","planPath":"/repo/plan.md","phase":"review"}}
+{"seq":2,"type":"review.provenance","payload":{"round":1,"dispatchToolCallId":"call-failed","reviewerAgentId":"agent-failed"}}
+{"seq":3,"type":"review.reconciliation","payload":{"status":"reconciliation_retrying","attempts":1,"round":1,"marker":"review-reconciliation-unavailable","active":true,"verdict":"PENDING"}}
+{"seq":4,"type":"review.reconciliation","payload":{"status":"reconciliation_exhausted","attempts":1,"round":1,"marker":"review-reconciliation-unavailable","active":false,"verdict":"PENDING"}}
+{"seq":5,"type":"orchestration.resume","payload":{"sessionId":"owner-a","task":"review task","planPath":"/repo/plan.md","phase":"review","ownershipStatus":"owned","recordedOwner":"owner-a","transferFrom":"","explicit":true,"taskMatches":true,"planMatches":true,"reviewActive":false,"reviewVerdict":"PENDING","approval":"pending","preserveRequirements":true}}
+{"seq":6,"type":"review.reconciliation","payload":{"status":"reconciliation_retrying","attempts":1,"round":1,"marker":"review-reconciliation-unavailable","active":true,"verdict":"PENDING"}}
+{"seq":7,"type":"review.provenance","payload":{"round":1,"dispatchToolCallId":"call-retry","reviewerAgentId":"agent-retry"}}
+{"seq":8,"type":"review.provenance","payload":{"round":1,"dispatchToolCallId":"call-retry","reviewerAgentId":"agent-retry"}}

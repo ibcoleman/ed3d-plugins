@@ -25,13 +25,108 @@ Drive adversarial review rounds over completed implementation work. This skill i
   "open_critical_high": [],
   "consecutive_blocks": 0,
   "history": [],
-  "nonce": "a1b2c3d4"
+  "nonce": "a1b2c3d4",
+  "provenance": null,
+  "recovery": {
+    "status": "none",
+    "attempts": 0,
+    "marker": null
+  }
+},
+"ownership": {
+  "status": "unowned",
+  "session_id": null,
+  "transfer_from": null
 }
 ```
 
 Whenever a review arms — including re-arming an existing inactive review block for a new loop — generate a fresh nonce: 8 lowercase hex characters, written as `review.nonce`, overwriting any prior value. Include it in every adversary dispatch as `NONCE: <value>` — the guardrail hook matches rendered verdicts by this tag, which is what keeps the literal `VERDICT: SHIP` strings in skill and agent prose from being mistaken for a real verdict (that false match fabricated a terminal SHIP live on 2026-08-16). Never reuse a nonce across loops.
 
 - **Resume reconciliation.** If resuming into an active review (`review.active: true` on resume), reconcile first: any verdict already rendered in this session's transcript but absent from the state file must be written to the state file before any new dispatch. Do not dispatch a fresh adversary to "check" a verdict the transcript already contains. (This recovers same-session omissions only — after `/clear` the transcript is gone, the state file is the sole truth, and a stale `PENDING` on an already-completed loop can then only be caught by the operator or the round history.)
+
+### Owner, provenance, and bounded reconciliation
+
+The state contract always carries `"ownership"` with statuses `unowned`,
+`owned`, `transfer_pending`, or `recovery_required`; it carries
+the `"provenance"` field (`review.provenance`) as `null` before dispatch and then the current `round`,
+`dispatch_tool_call_id`, and `reviewer_agent_id`. The command's three explicit
+resume paths are **same-owner continuation**, **authorized ownership transfer**,
+and **explicit legacy recovery**. A transfer requires the old owner to write
+`transfer_pending` before `/clear`; an unrelated session cannot inherit it.
+Missing identity uses `ownership-recovery-required` without mutating state.
+
+### Executable owner and provenance checklist
+
+At review arm, read the live session identity (the parent session identity)
+and persist
+`ownership.status: owned` with the current task, absolute plan, phase, and
+exact `session_id`; re-read it before dispatch. If the session identity is unavailable,
+leave ownership unbound (or normalize malformed legacy state to
+`recovery_required`), do not dispatch or infer a verdict, and surface
+`ownership-recovery-required`.
+
+For a new review round (initial arm or FIX-FIRST advance), clear `review.provenance`,
+set the current `review.round`/`review.verdict` to the new
+`PENDING` review, and reset the recovery block to `status: none`,
+`attempts: 0`, `marker: null` before the first dispatch. After either
+supported parent dispatch observation, persist `review.provenance` with the
+current `round` and `dispatch_tool_call_id`. After `subagent.started`, persist
+`reviewer_agent_id`; re-read the state and require the round, dispatch ID, and
+reviewer ID to agree before parsing the completion.
+
+Same-round reconciliation/protocol retry is a separate state-machine
+transition. Before the sole retry dispatch, persist
+`review.recovery.status: reconciliation_retrying`, `attempts: 1`, and marker
+`review-reconciliation-unavailable`. Preserve that state, the round, nonce,
+history, SHAs, approval, and ownership through dispatch, continuation, and
+authorized transfer; never reset it as retry initialization. Do not preserve
+failed dispatch/reviewer provenance: clear only `review.provenance` before
+the retry, then replace it with the new observed dispatch tool-call ID and
+reviewer agent ID from that retry's parent dispatch/start pair. If the retry
+is unavailable again, atomically write
+`reconciliation_exhausted`, attempts `1`, inactive/PENDING/no-verdict state.
+Only a new round or an explicitly authorized same-owner resume from exhausted
+may reset `status: none`, `attempts: 0`, `marker: null` and grant one fresh
+retry budget. Missing, malformed, or cross-round provenance keeps the owner
+blocked with `review-reconciliation-unavailable` and never fabricates a
+verdict.
+
+When a different context will resume, the current owner must, before `/clear`,
+write and re-read `ownership.status: transfer_pending` with
+`transfer_from` equal to its live `session_id`, preserving task/plan/phase,
+approval, active review, round, nonce, and history. `/clear` is only a context
+handoff, not approval or an ownership claim. Same-owner continuation keeps
+`owned`; the fresh context must use explicit `resume` to claim a pending
+transfer before it continues.
+
+Reconciliation is a conservative streaming JSONL scan, not substring matching.
+The dispatch `toolCallId`, `subagent.started`, expected reviewer
+`assistant.message`, and `subagent.completed` must form one current lineage.
+`tool.execution_complete` result content is never verdict evidence. The latest
+reviewer message must end with exactly two lines:
+`VERDICT: SHIP [<nonce>]` plus `has_critical_or_high: false`, or
+`VERDICT: FIX-FIRST [<nonce>]` plus `has_critical_or_high: true`. Quoted,
+fenced, duplicate, trailing, stale, wrong-lineage, and out-of-order variants
+are unavailable. The parser retains bounded state and scans past 256 KiB.
+
+Missing reviewer completion provenance with an active PENDING review remains
+ordinary owner enforcement. When a bound completed-result check is unavailable,
+persist the retrying marker before using the existing one current-round
+protocol retry, not repeated stop blocking. On the
+second unavailable result, write `reconciliation_exhausted`, attempts `1`,
+`review.active: false`, and `review.verdict: "PENDING"` atomically. no verdict
+exists; the phrase "no verdict exists" is the required operator diagnostic;
+stopping is allowed only with the diagnostic marker and an explicit
+operator choice to re-arm or abandon. A later same-owner resume may reset the
+recovery block and re-arm one attempt, but never fabricates SHIP.
+
+Protocol failure uses this same state transition. Record exactly one
+same-round `protocol failure`/`PENDING` history entry, persist the retrying
+marker, and allow exactly one protocol re-dispatch. If the retry again has no parseable verdict, persist the
+complete exhausted no-verdict state (`reconciliation_exhausted`,
+`review.active: false`, `review.verdict: "PENDING"`, `attempts: 1`, and the
+diagnostic marker), report that no verdict exists, and require an explicit
+operator choice to re-arm or abandon. This path must never SHIP.
 
 `max_rounds` defaults to 3; the operator can change it in the state file at any time.
 
@@ -131,7 +226,17 @@ Only after the state file is committed and verified: print the adversary's full 
 
 **A verdict that is not in the state file does not exist.** No stop, no operator report, no dispatch may occur between parsing a verdict and committing it to the state file — one turn, both actions. The guardrail reads the file, not your intentions.
 
-If the response contains no parseable verdict block, treat it as a protocol failure: re-dispatch once with an instruction to end with the verdict block exactly as specified. The protocol failure commits too — leave `verdict: "PENDING"` unchanged, reset `consecutive_blocks: 0`, and append a history entry of exactly `{"round": N, "verdict": "PENDING", "critical_high": 0, "advisory": 0, "note": "adversary protocol failure"}`, so the reset is still progress-tracked. If it fails again, treat as FIX-FIRST with a high finding ("adversary protocol failure") and surface to the operator.
+If the response contains no parseable verdict block, treat it as a protocol
+failure: re-dispatch exactly once with an instruction to end with the verdict
+block exactly as specified. The protocol failure commits too — leave
+`verdict: "PENDING"` unchanged, reset `consecutive_blocks: 0`, and append a
+history entry of exactly
+`{"round": N, "verdict": "PENDING", "critical_high": 0, "advisory": 0, "note": "adversary protocol failure"}`
+so the reset is progress-tracked. If the one retry also fails, do not turn the
+absence of a verdict into FIX-FIRST or SHIP: persist the complete
+`reconciliation_exhausted`/inactive/PENDING state with `attempts: 1` and the
+diagnostic marker, report that no verdict exists, and require an explicit
+operator choice to re-arm or abandon.
 
 ### 3. Branch on the Verdict
 
@@ -161,6 +266,21 @@ If the response contains no parseable verdict block, treat it as a protocol fail
 ### 4. Rate Limits
 
 If the adversary or bug-fixer dispatch fails with a provider rate-limit error, wait, retry once, and if it persists, serialize all further dispatches (no parallel dispatches for the rest of the loop).
+
+### 5. Final reporting and exhausted recovery
+
+The normal final report is permitted only after a committed SHIP state has
+been re-read and verified (`review.active: false`, `review.verdict: "SHIP"`,
+and `consecutive_blocks: 0`). An exhausted reconciliation or second protocol
+failure is not a terminal SHIP outcome: verify
+`review.active: false`, `review.verdict: "PENDING"`,
+`review.recovery.status: "reconciliation_exhausted"`,
+`review.recovery.attempts: 1`, and
+`review.recovery.marker: "review-reconciliation-unavailable"`; report the
+failure and that no verdict exists. Stop only with the diagnostic marker and
+an explicit operator choice to re-arm or abandon. Re-arm is an authorized
+same-owner `resume` followed by exactly one fresh retry; abandon preserves the
+inactive/PENDING no-verdict state. Never write or report SHIP for exhaustion.
 
 ## Review Policy Summary
 

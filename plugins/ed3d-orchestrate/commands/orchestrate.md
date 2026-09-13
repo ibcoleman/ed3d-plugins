@@ -70,6 +70,105 @@ concurrent model-mediated state edits. A verdict must be persisted and
 re-read before it is reported; malformed state never becomes a fabricated
 verdict.
 
+## Ownership, clear, and resume
+
+The canonical state includes `"ownership": {"status": "unowned",
+"session_id": null, "transfer_from": null}` and `review.provenance` (null
+before dispatch, then the current round's `dispatch_tool_call_id` and
+`reviewer_agent_id`). Ownership statuses are `unowned`, `owned`,
+`transfer_pending`, and `recovery_required`; missing or malformed ownership is
+not an implicit owner claim. The stop hook reads both `sessionId` and
+`session_id`.
+
+`orchestrate resume` distinguishes these paths:
+
+| Path | Required evidence and result |
+|---|---|
+| **same-owner continuation** | `owned` plus a live session matching `session_id`, the task, absolute plan, and phase; preserve approval and all review requirements without `transfer_pending` |
+| **authorized ownership transfer** | `transfer_pending`, `transfer_from` equal to the old `session_id`, explicit `$1=resume`, a different live session, and matching task/absolute plan/phase; replace the owner, clear `transfer_from`, and preserve pending approval or active/PENDING review |
+| **explicit legacy recovery** | missing/malformed ownership or `recovery_required`, explicit `$1=resume`, live identity, and matching task/absolute plan/phase; bind the new owner without inferring dispatch or verdict |
+
+A different session without a valid transfer marker is an unauthorized
+non-transfer session and is refused without mutation. An old owner may stop
+while `transfer_pending`; a new session is silently allowed before its claim.
+Missing event identity or malformed transfer emits the stable
+`ownership-recovery-required` allow marker and leaves bytes unchanged.
+
+### Executable ownership and provenance checklist
+
+For a fresh task, read the live session identity before any phase transition.
+When it is available, write `ownership.status: owned` with that exact
+`session_id`, the current task, absolute plan, and phase, then re-read the
+state file before dispatching or enabling review. If the session identity is unavailable,
+leave the state unowned (or mark malformed legacy state
+`recovery_required`), do not dispatch, do not claim ownership, and surface
+`ownership-recovery-required`; never invent an identity from transcript text.
+
+For a **new review round** (initial arm or a FIX-FIRST advance), set the
+current round and `review.verdict` to `PENDING`, clear `review.provenance`, and
+persist `review.recovery` as `status: none`, `attempts: 0`, `marker: null`
+before dispatching. This is the only ordinary dispatch initialization.
+Immediately after the parent dispatch, persist `review.provenance` with its
+round and `dispatch_tool_call_id` from either supported parent dispatch
+observation. After
+`subagent.started` supplies the reviewer identity, persist
+`reviewer_agent_id` in the same round and re-read all three bindings before
+using the stop hook's reconciliation result.
+
+For the **same-round reconciliation/protocol retry**, do not reinitialize the
+round. First persist `review.recovery` as
+`status: reconciliation_retrying`, `attempts: 1`,
+`marker: review-reconciliation-unavailable`, then emit the sole retry
+dispatch. Preserve that block, the round, nonce, history, SHAs, approval,
+and ownership across the retry's dispatch, continuation, and authorized
+transfer. Do not preserve failed dispatch/reviewer provenance: clear only
+`review.provenance` before the retry, then replace it with the new observed
+dispatch tool-call ID and reviewer agent ID from that retry's parent
+dispatch/start pair. A retry may not clear the recovery marker or return
+attempts to zero. If the retry is unavailable again, atomically persist
+`reconciliation_exhausted`, `attempts: 1`, `review.active: false`, and
+`review.verdict: PENDING`.
+
+Only a new review round or an explicitly authorized same-owner resume from
+`reconciliation_exhausted` may reset the recovery block to
+`status: none`, `attempts: 0`, `marker: null`; the authorized exhausted
+re-arm then starts one fresh retry budget. If any required identifier is
+missing or crosses rounds, leave owner enforcement active and use the
+`review-reconciliation-unavailable` diagnostic; do not infer a verdict.
+
+before `/clear` will create a different live session, the current owner must
+write and re-read `ownership.status: transfer_pending` with
+`transfer_from` equal to the current `session_id`, preserving task, absolute
+plan, phase, approval, review, round, nonce, and history. `/clear` is only the
+context handoff; it is not an ownership claim or approval. A resumed session
+must process the explicit `resume` command, validate its live identity and
+bindings, replace the owner, clear `transfer_from`, and only then continue.
+Same-owner continuation does not write `transfer_pending`.
+
+Review provenance is observational evidence: the stop hook accepts only a
+current dispatch/start/reviewer-message/completion lineage and its exact
+nonce-tagged two-line terminal verdict. It streams JSONL beyond 256 KiB and
+ignores quoted, fenced, duplicate, trailing, stale, wrong-lineage, and
+`tool.execution_complete` text. A valid owner with missing or unavailable
+completed lineage remains blocked with `review-reconciliation-unavailable`;
+normal active PENDING with no completed result remains ordinary enforcement.
+The protocol permits one current-round reconciliation retry. The second
+unavailable result writes `reconciliation_exhausted`, `attempts: 1`,
+`review.active: false`, and `review.verdict: "PENDING"` in one transition.
+Stopping is then allowed only with `review-reconciliation-unavailable` and
+an explicit no-verdict operator choice. No verdict exists in that state and
+no SHIP outcome is inferred.
+
+If an adversary response has no parseable verdict, record one same-round
+`protocol failure`/`PENDING` history entry, persist
+`reconciliation_retrying`/attempts `1`/the diagnostic marker, and perform
+only the existing one protocol re-dispatch. If that retry also has no verdict, persist
+`reconciliation_exhausted`, `review.active: false`,
+`review.verdict: "PENDING"`, `attempts: 1`, and the diagnostic marker in one
+state transition. Report that no verdict exists, allow the stop only through
+the exhausted diagnostic, and require an explicit operator choice to re-arm or abandon.
+This exhausted protocol-failure path must never SHIP.
+
 ## Normal mode
 
 $1 contains the task description. If it is empty or vague after the auto-resume check above, ask the operator what they want accomplished — do not guess a task.

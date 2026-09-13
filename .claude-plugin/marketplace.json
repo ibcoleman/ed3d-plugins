@@ -1,7 +1,7 @@
 {
     "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
     "name": "ed3d-plugins",
-    "version": "2.2.1",
+    "version": "2.2.2",
     "description": "Unified catalog for ed3d's development toolkit, targeting GitHub Copilot CLI; Claude Code plugins are frozen legacy.",
     "owner": {
         "name": "Ed",
@@ -201,8 +201,8 @@
         },
         {
             "name": "ed3d-orchestrate",
-            "description": "EXPERIMENTAL. Polytoken-style orchestration loop for Copilot CLI: scout-sweep research fanout, plan-review gate, builder fanout, and adversarial tumble-dryer review rounds with an agentStop guardrail hook. Handoff gate is protocol-only (Branch B).",
-            "version": "0.5.0",
+            "description": "EXPERIMENTAL. Polytoken-style orchestration loop for Copilot CLI: scout-sweep research fanout, plan-review gate, builder fanout, and adversarial tumble-dryer review rounds with owner-scoped parent stop/state isolation, provenance-aware reconciliation, and bounded recovery. Child write enforcement remains review-wide because preToolUse lacks a parent owner field; the handoff gate is protocol-only (Branch B).",
+            "version": "0.6.0",
             "source": "./plugins/ed3d-orchestrate",
             "author": {
                 "name": "Ed",

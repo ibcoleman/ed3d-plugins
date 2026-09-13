@@ -182,6 +182,86 @@ def test_state_transition_limitations_and_verdict_persistence_are_documented():
         assert "does not protect concurrent model-mediated state edits" in body
 
 
+def test_owner_scoped_review_recovery_contract_is_documented():
+    command = text(COMMAND)
+    skill = text(SKILL)
+    adversarial = text(ROOT / "plugins/ed3d-orchestrate/skills/adversarial-review/SKILL.md")
+    readme = text(README)
+    for body in (command, skill, adversarial, readme):
+        assert '"ownership"' in body
+        assert "transfer_pending" in body
+        assert "recovery_required" in body
+        assert "same-owner continuation" in body
+        assert "authorized ownership transfer" in body
+        assert "explicit legacy recovery" in body
+        assert "ownership-recovery-required" in body
+        assert "review-reconciliation-unavailable" in body
+        assert "reconciliation_exhausted" in body
+    assert "sessionId" in command and "session_id" in command
+    assert "preToolUse has no parent owner" in readme
+
+
+def test_reviewer_lineage_and_bounded_recovery_are_documented():
+    skill = text(SKILL)
+    adversarial = text(ROOT / "plugins/ed3d-orchestrate/skills/adversarial-review/SKILL.md")
+    readme = text(README)
+    for body in (skill, adversarial, readme):
+        assert '"provenance"' in body
+        assert "dispatch_tool_call_id" in body
+        assert "reviewer_agent_id" in body
+        assert "streaming JSONL" in body
+        assert "256 KiB" in body
+        assert "one" in body and "reconciliation" in body
+        assert "no verdict exists" in body
+    assert "tool.execution_complete" in skill
+    assert "quoted" in skill and "fenced" in skill
+
+
+def test_roadmap_records_parent_scope_and_branch_boundary():
+    roadmap = text(ROOT / "ROADMAP.md")
+    assert "parent stop/state isolation" in roadmap
+    assert "review-wide child write enforcement" in roadmap
+    assert "no parent-owner field" in roadmap
+    assert "Branch B" in roadmap
+
+
+def test_operational_owner_and_provenance_checklists_are_present():
+    bodies = [
+        text(COMMAND),
+        text(SKILL),
+        text(ROOT / "plugins/ed3d-orchestrate/skills/adversarial-review/SKILL.md"),
+    ]
+    required = (
+        "read the live session identity",
+        "ownership.status: owned",
+        "session identity is unavailable",
+        "persist `review.provenance`",
+        "dispatch_tool_call_id",
+        "reviewer_agent_id",
+        "clear `review.provenance`",
+        "transfer_pending",
+        "before `/clear`",
+    )
+    for body in bodies:
+        for phrase in required:
+            assert phrase in body, phrase
+
+
+def test_exhaustion_protocol_is_not_a_ship_path():
+    bodies = [
+        text(COMMAND),
+        text(SKILL),
+        text(ROOT / "plugins/ed3d-orchestrate/skills/adversarial-review/SKILL.md"),
+    ]
+    for body in bodies:
+        assert "protocol failure" in body
+        assert "reconciliation_exhausted" in body
+        assert "review.active: false" in body
+        assert 'review.verdict: "PENDING"' in body
+        assert "explicit operator choice to re-arm or abandon" in body
+        assert "never SHIP" in body
+
+
 TESTS = [name for name in globals() if name.startswith("test_")]
 
 

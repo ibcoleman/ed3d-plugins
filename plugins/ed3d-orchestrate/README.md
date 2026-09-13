@@ -32,6 +32,23 @@ This plugin is written for Copilot CLI's native delegation. Its skills use Copil
  6. REPORT ────── per-phase summary, review history, final verdict
 ```
 
+### Owner and reviewer-lineage state
+
+The persisted contract includes `"ownership"` with `unowned`, `owned`,
+`transfer_pending`, and `recovery_required` statuses, plus a `"provenance"`
+object carrying the current `round`, `dispatch_tool_call_id`, and
+`reviewer_agent_id` for the current round. A fresh loop binds the live parent
+session as `owned` before work; if that identity is unavailable it remains
+unbound and surfaces `ownership-recovery-required`. It distinguishes same-owner
+continuation, authorized ownership transfer, and explicit legacy recovery. Missing identity uses
+`ownership-recovery-required` without mutation. A bound but unavailable
+completed result remains owner-blocked with
+`review-reconciliation-unavailable`; after one retry the explicit
+`reconciliation_exhausted` / no-verdict state allows an operator choice. The
+diagnostic is `no verdict exists` in that state.
+The preToolUse has no parent owner field, so child write enforcement remains
+review-wide rather than claiming unrelated-session isolation.
+
 ## Agents and model selection
 
 The Copilot-native `*.agent.md` twins intentionally omit a `model` frontmatter key. Dispatch is pinned-first on best-effort hard-coded IDs, while the twins preserve role descriptions and bodies from their Claude Code originals and remain directly Auto-compatible.
@@ -119,7 +136,8 @@ The loop maintains `.ed3d/orchestrate-state.json` in the working repository. It 
 - Registers under both documented spellings — Copilot-native `agentStop` and the VS Code-compatible `Stop` (which is also Claude Code's stop event). The decision output is stable across fires; if both events fire for one stop, the block counter increments once per event. (Note: `AgentStop` is **not** a documented event name in either runtime — the PascalCase equivalent of `agentStop` is `Stop`.)
 - Fail-open everywhere: no state file, malformed JSON, unreadable state, inactive review → exit 0 silently. Hook timeouts fail open per the Copilot hooks reference.
 - Blocking emits `{"decision": "block", "reason": "..."}` naming round N of M and the open findings; `round > max_rounds` allows the stop with a reason instructing the agent to surface the operator decision.
-- **Stale-verdict detection (0.3.3, nonce-gated):** when the stop event carries a transcript path, the hook scans its tail for this loop's nonce-tagged SHIP marker (`VERDICT: SHIP [<nonce>]`, case-normalized). Prose can never contain the nonce-tagged form, so the 0.3.1-era false positives (literal `VERDICT: SHIP` strings from skill/hook text — one of which fabricated a terminal SHIP that overrode the operator) are structurally impossible. State files without a nonce (pre-0.3.3 in-flight loops) skip the scan entirely. Block reasons are diagnostic and addressed to the orchestrator only — never forwarded to subagents, never prescribing concrete state writes.
+- **Owner-scoped review stop:** the parent `agentStop`/`Stop` path compares the event's `sessionId`/`session_id` with the persisted `ownership.session_id`. A different parent session is silently allowed without changing counters or state; missing identity uses the explicit `ownership-recovery-required` allow marker. The guarantee is limited to parent stop/state decisions: the observed `preToolUse` payload has no parent owner field, so the existing review-wide child write enforcement remains in place and is not cross-session isolation.
+- **Stale-verdict detection:** when provenance is bound, the hook performs a conservative streaming JSONL scan rather than arbitrary substring or 256 KiB tail scanning. It correlates the dispatch `toolCallId`, reviewer `agentId`, `subagent.started`/`completed`, and the latest reviewer `assistant.message`; `tool.execution_complete` content, prompts, file reads, quoted/fenced/duplicate/trailing/stale/wrong-lineage markers do not qualify. Only the exact nonce-tagged two-line SHIP/FIX-FIRST block with its severity boolean is evidence.
 - **Terminal-state enforcement (0.3.1):** a final `SHIP` state only allows a stop when it is consistent — `active: false`, `verdict: "SHIP"`, `consecutive_blocks: 0`. Otherwise the hook blocks, pointing at the adversarial-review skill's terminal-state verification — repeatedly until repaired, bounded by the 7-block safety cap.
 - Respects the CLI's 8-consecutive-block cap: after 7 blocks without recorded progress it allows with a warning, so a session can never hard-lock. The loop resets the counter on every round/verdict transition, so it only trips when stops are being blocked with no forward motion.
 
@@ -154,7 +172,7 @@ Watch `.ed3d/orchestrate-state.json` as the loop runs — phase and review trans
 
 ### Context handoff and resume
 
-Builders and reviewers run in isolated subagent contexts, but the orchestrating session accumulates every printed subagent response. After the plan-review gate passes, the orchestrator stops at an **operator approval checkpoint** and offers the two approval paths: reply *continue* to approve and proceed in the same context, or `/clear` and then resume to approve and continue with a fresh context — the loop records its full position in the state file (`phase`, `plan_path`, the SHAs, the review block), and completed phases are never repeated. A clean plan-review result does not by itself authorize execution: the approval response (either `continue` or the `/clear` + resume) is processed before any builder dispatch.
+Builders and reviewers run in isolated subagent contexts, but the orchestrating session accumulates every printed subagent response. After the plan-review gate passes, the orchestrator stops at an **operator approval checkpoint** and offers the two approval paths: reply *continue* to approve and proceed in the same context, or, when a different session is required, write `transfer_pending` before `/clear`, resume, and then process *continue* in the fresh context. `/clear` alone is only a context handoff, not approval or an ownership claim — the loop records its full position in the state file (`phase`, `plan_path`, the SHAs, the review block), and completed phases are never repeated. A clean plan-review result does not by itself authorize execution: the approval response is processed before any builder dispatch.
 
 A **non-empty task argument always starts a fresh loop** rather than
 auto-resuming. It resets every task, plan, approval, SHA, and review field,
@@ -232,6 +250,7 @@ The plan-review → builder handoff gate ships as **protocol-only** guidance. Th
 
 - The plan-review-to-builder handoff approval checkpoint is **prompt-only guidance**: there is no native Copilot runtime enforcement for it, and no repository hook/script backstop (that is deferred until a native builder-dispatch payload and identity are evidenced). An orchestrator could still violate the protocol; no deployment or version-drift limitation is implied by this prompt-only slice beyond that.
 - Facet discipline (e.g. read-only planning) is enforced by instruction, not by harness. The guardrail hook narrows this gap only for the review loop.
-- The hook's stale-verdict scan is nonce-gated (0.3.3): it matches only this loop's `VERDICT: SHIP [<nonce>]` marker, so stale verdict strings from a prior loop in the same session can no longer false-match. Residual gaps: pre-0.3.3 in-flight state files carry no nonce and skip the scan; a crashed loop can leave stale active+PENDING state that write-blocks subagents until the state file is repaired; bash-redirection writes bypass the write-guard (prose rule remains).
+- The hook's stale-verdict scan requires a nonce and current reviewer lineage; it no longer scans arbitrary tail text. Legacy in-flight state without provenance remains ordinary owner enforcement, a crashed loop can leave stale active+PENDING state that write-blocks subagents until repaired, and bash-redirection writes bypass the write-guard (prose rule remains).
+- The state contract distinguishes `same-owner continuation`, `authorized ownership transfer`, and `explicit legacy recovery` through its `ownership` and `review.provenance` blocks. Unavailable completed lineage keeps the valid owner blocked with `review-reconciliation-unavailable`; one existing retry is allowed, then `reconciliation_exhausted` explicitly permits a no-verdict stop with operator choice. No verdict exists in that exhausted state.
 - Dispatch model selection is pinned-first best-effort guidance with a conservative explicit-pre-start-rejection-only Auto fallback. The adversary prefers `gpt-6-astra` / `medium`; all other orchestrated roles prefer `gpt-5.6-luna` / `high`. It is not a mechanically intercepted runtime feature; direct agent launches outside this dispatch path inherit account/CLI defaults, while unknown dispatch-error semantics and catalog drift require visible evidence. Preferred-vs-fallback provenance is transcript/report-only and does not survive `/clear` or resume; the existing state schema is not extended to persist it.
 - Parallel dispatch can trip provider rate limits; the skills fall back to serial/small-batch dispatch on rate-limit errors.
