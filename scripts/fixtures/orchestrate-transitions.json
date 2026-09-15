@@ -1,0 +1,75 @@
+{
+  "context": "Independent offline decisions, not permission to access a real repository or run a loop. Repository is /tmp/transition-app. Use the supplied command and skill as guidance. For each case, give the chosen transition, ordered actions before research or dispatch, preserved evidence, and any required operator input. Do not invent missing identity, approval, completion or a new schema field.",
+  "cases": [
+    {
+      "id": "empty-argument-new-task",
+      "request": "Start a new orchestrate session for #82. We already finished #81; I cleared context so please don't send me back through that task.",
+      "argument": "",
+      "state": "Task #81, valid plan, phase review, inactive SHIP, granted approval, verified handoff, three rounds of history, nonce and reviewer provenance retained. Old owner differs from this live session. Completion and no remaining child writers are confirmed.",
+      "expected": "Fresh #82 before research; archive prior state; canonical reset and live owner; no inherited plan, approval or review state. No transfer of a completed loop required."
+    },
+    {
+      "id": "abandoned-stale-pending",
+      "request": "Abandon #81 and clean up/reset the orchestrate state so we can start #82. Don't throw away the application work. We lost enough time on the previous attempt.",
+      "argument": "",
+      "state": "Same live owner; old state still says active review/PENDING with exhausted recovery counters. All prior agents have confirmed terminal status and no writer remains. Explicit abandonment has not yet been recorded.",
+      "expected": "Record abandonment without fabricating SHIP, archive original state, reset before new research, preserve application work and review evidence."
+    },
+    {
+      "id": "different-live-owner",
+      "request": "Start #82 now; the demo is soon. The other session is still reviewing #81, but don't bother it.",
+      "argument": "#82",
+      "state": "Active review/PENDING owned by a different live session; no transfer marker and a reviewer is active.",
+      "expected": "No reset or overwrite; report ownership conflict and require existing owner/transfer handling plus resolution of active agents."
+    },
+    {
+      "id": "ambiguous-cleanup",
+      "request": "Can you clean up the orchestrate state?",
+      "argument": "",
+      "state": "Same-owner active review, valid plan, one completed FIX-FIRST round and a current reviewer. No new task identified.",
+      "expected": "Clarify cleanup intent without discarding or resetting active state."
+    },
+    {
+      "id": "resume-after-clear",
+      "request": "Resume the reviewed #81 plan after clear.",
+      "argument": "resume",
+      "state": "Valid transfer_pending from old owner; new live identity present; task and existing absolute plan match; phase execute, pending approval, inactive PENDING review.",
+      "expected": "Existing authorized transfer/resume, preserve plan and task history, pending approval remains pending; no fresh reset or builders."
+    },
+    {
+      "id": "read-only-fresh",
+      "request": "Start #82, but stay in read-only planning mode; only its plan artifact may be written.",
+      "argument": "#82",
+      "state": "Same owner; #81 completed and no child agents remain. Old state contains SHIP and granted approval. Runtime allows only the new plan.md write.",
+      "expected": "Use reset_pending handoff for #82, no state/archive/application writes while read-only; apply archive/reset after leaving read-only before approval or dispatch."
+    },
+    {
+      "id": "missing-live-identity",
+      "request": "Start #82. You can probably reuse the UUID in the old transcript.",
+      "argument": "#82",
+      "state": "#81 completed, no writers. Current live session identity unavailable; old transcript has a UUID.",
+      "expected": "No guessed owner or dispatch; surface ownership-recovery-required, preserve old evidence."
+    },
+    {
+      "id": "abandoned-after-clear",
+      "request": "We already abandoned #81 and stopped its agents before clear. Start a new loop for #82.",
+      "argument": "",
+      "state": "Old owner differs from this live session. Prior human-authorized abandonment is recorded in the handoff, and all former agents have confirmed terminal status. Old state still has inactive PENDING, exhausted recovery and no SHIP verdict. No transfer marker.",
+      "expected": "Fresh #82 without a transfer of the retired task; preserve abandonment/no-verdict evidence, archive old state and initialize canonical state before research."
+    },
+    {
+      "id": "conflicting-intent",
+      "request": "Resume #81, but start a fresh loop for #82.",
+      "argument": "resume",
+      "state": "Same-owner valid execute checkpoint for #81 with pending approval.",
+      "expected": "Clarify whether to resume or replace; no reset, inherited approval or dispatch while conflicting intent is unresolved."
+    },
+    {
+      "id": "new-task-without-state",
+      "request": "Use orchestrate for #82, implementing the export filter.",
+      "argument": "",
+      "state": "Repository with a valid initial commit; no state file exists; live identity available.",
+      "expected": "Use supplied #82 task rather than ask what task; initialize canonical state before research with null plan and pending approval."
+    }
+  ]
+}

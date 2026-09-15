@@ -163,6 +163,49 @@ def test_fresh_task_reset_and_validated_resume_are_explicit():
     assert "reset every task, plan, approval, SHA, and review field" in skill
 
 
+def test_transition_intent_precedes_auto_resume():
+    command = text(COMMAND)
+    skill = text(SKILL)
+    assert command.index("## Interpret the requested transition first") < command.index("## Auto-resume mode")
+    assert skill.index("## Interpret the requested transition first") < skill.index("## State Protocol")
+    for body in (command, skill):
+        assert "latest user request" in body
+        assert "empty command argument does not mean resume" in " ".join(body.split())
+        assert "conflicting" in body
+    assert "Task: <resolved task from the latest user request and arguments>" in command
+    assert "Task: $1" not in command
+
+
+def test_fresh_reset_precedes_new_work_and_preserves_prior_evidence():
+    skill = text(SKILL)
+    section = skill.split("### Fresh-task reset and resume validation", 1)[1].split(
+        "The review block's", 1
+    )[0]
+    section = " ".join(section.split())
+    assert "before research, branch/bookmark changes, or agent dispatch" in section
+    assert "archive the prior state" in section
+    assert "verify the copy" in section
+    assert "plan_path: null" in section
+    assert "review.provenance" in section and "review.recovery" in section
+    assert "re-read" in section
+    assert "abandonment, not SHIP" in section
+
+
+def test_fresh_transition_protects_active_owners_and_writers():
+    skill = text(SKILL)
+    section = skill.split("### Fresh-task reset and resume validation", 1)[1].split(
+        "The review block's", 1
+    )[0]
+    section = " ".join(section.split())
+    assert "different live owner" in section
+    assert "without mutation" in section
+    assert "no prior agents are still running" in section
+    assert "inactive review alone is not proof" in section
+    assert "completed loop does not require" in section
+    assert "confirmed abandoned loop" in section
+    assert "transfer_pending" in section
+
+
 def test_pending_reset_handoff_is_recorded_and_not_authorization():
     skill = text(SKILL)
     command = text(COMMAND)
@@ -228,7 +271,7 @@ def test_command_checks_handoff_after_builder_completion():
 
 
 def _canonical_state(body: str) -> dict:
-    marker = "At loop start, create `.ed3d/orchestrate-state.json`"
+    marker = "## State Protocol (mandatory)"
     start = body.index(marker)
     match = re.search(r"```json\n(.*?)\n```", body[start:], re.DOTALL)
     assert match, "canonical fresh-state JSON example is missing"

@@ -128,7 +128,7 @@ POLICY_TARGETS = {
         "Commit the verdict to the state file in the same turn first", '"history": [',
         '{"round": 1, "verdict": "FIX-FIRST", "critical_high": 1, "advisory": 6}', '{"round": 2, "verdict": "SHIP", "critical_high": 0, "advisory": 0}',
         "verify the git baseline", '"base_sha": null', '"head_sha": null', "record `head_sha` from the current `HEAD`",
-        "review.consecutive_blocks: 0", "Not if a state file exists. Resume the recorded loop first.", '"nonce": null', "generate a fresh nonce",
+        "review.consecutive_blocks: 0", "A named fresh task wins over auto-resume; otherwise validate the recorded loop.", '"nonce": null', "generate a fresh nonce",
         "adversary dispatch is in flight", "write-guard hook mechanically blocks write-class tool calls", DISPATCH_BEGIN, DISPATCH_END,
         "plan-reviewer", "task-implementor-fast", "gpt-5.6-luna", "reasoning_effort=", "pre-start rejection",
         "rate-limit", "protocol-failure", "ambiguous", "full response",

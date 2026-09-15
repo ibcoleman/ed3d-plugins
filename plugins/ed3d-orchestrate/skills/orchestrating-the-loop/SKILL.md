@@ -10,9 +10,17 @@ The full orchestration loop, Polytoken-style: research → plan → plan-review 
 
 **Do not use nested subagents.** You dispatch first-level scouts, reviewers, builders, and fixers. Every dispatched agent must return directly to you. Include the line "Do not dispatch or invoke any subagents" in every dispatch prompt — do not rely on the agents remembering it.
 
+## Interpret the requested transition first
+
+Determine intent from the latest user request and command arguments. An empty command argument does not mean resume when the user identifies a new task. "Start a new task", "start a new orchestrate session for #N", or "clean up/reset the orchestrate state so we can start #N" selects a fresh loop. Resolve that task once; do not ask for it again just because `$1` is empty.
+
+A new chat or `/clear` alone is not a new task. Explicit `resume` preserves the current task through the existing resume rules. Clarify conflicting task/resume instructions or ambiguous "clean up" before mutating state. Fresh intent selects the transition, not permission to overwrite another active owner's state or dispatch builders.
+
 ## State Protocol (mandatory)
 
-At loop start, create `.ed3d/orchestrate-state.json` in the working directory of the repo you are operating on:
+For a fresh task, apply the transition checks below before creating or replacing
+`.ed3d/orchestrate-state.json` at the repository root with this canonical state.
+Resume preserves the current state instead:
 
 ```json
 {
@@ -55,14 +63,38 @@ At loop start, create `.ed3d/orchestrate-state.json` in the working directory of
 
 ### Fresh-task reset and resume validation
 
-- A **non-empty task argument always starts a fresh loop**. It wins over
-  auto-resume and must reset every task, plan, approval, SHA, and review field
-  to the canonical fresh state above. In particular, reset `task`, `plan_path`,
-  `base_sha`, `head_sha`, `phase`, `gate.approval`, the entire `handoff` block,
-  `review.max_rounds`, `review.history`, `review.consecutive_blocks`, and
-  `review.nonce` together. Existing plans, commits, and other repository work
-  remain untouched; only the current control-plane state is reset.
-- An **empty invocation may resume only** a validated in-progress state:
+- A **non-empty task argument always starts a fresh loop** (`resume` is a
+  control argument, not a task). A fresh task in the surrounding user request
+  has the same effect. After locating the repository, perform this transition
+  before research, branch/bookmark changes, or agent dispatch.
+- Read prior state and establish that no prior agents are still running or
+  able to write. An inactive review alone is not proof of completion or stopped
+  builders. For an unfinished loop with a different live owner, refuse without
+  mutation and use the existing transfer/recovery rules first. For an owned
+  unfinished loop, an explicit new-task request authorizes abandonment, not SHIP;
+  finish stopping its agents and preserve their work before replacement.
+  Unknown owner/agent status needs reconciliation, not a guessed clean slate.
+  A confirmed completed loop does not require `transfer_pending` to start a
+  different task, once no agents remain. The same applies to a confirmed
+  abandoned loop: prior human-authorized abandonment and stopped agents must
+  be evidenced, not inferred from a new chat, an inactive flag or an empty agent
+  list. Ending another owner's agents alone does not transfer its unfinished
+  loop or qualify it for legacy recovery.
+- If a state file exists, before replacement archive the prior state byte-for-byte to a unique,
+  non-overwriting path in session artifacts and verify the copy. Record the
+  archive path and completed/abandoned disposition in the handoff; preserve
+  original verdicts and uncertainty. If archival fails, leave state unchanged
+  and report the failure. Existing application changes, commits, branches,
+  bookmarks, plans, and evidence remain untouched; reset bookkeeping only.
+- Apply the canonical fresh state above and reset every task, plan, approval, SHA, and review field
+  together, not a patch over the old object. Set the resolved task, research
+  phase, `plan_path: null`, null SHAs, pending approval, and a fresh handoff.
+  Clear the entire old review, including history, verdict, provenance and
+  recovery counters (`review.provenance: null`, `review.recovery` at its defaults).
+  Bind live ownership using the checklist below and re-read the file before
+  new work. Bind only the new task's absolute plan path when that plan exists.
+- An **empty invocation may resume only** when no new task was selected and
+  the state is validated in-progress:
   `phase: "execute" or "review"`, a non-empty absolute `plan_path` that exists,
   and a task that matches the plan context. The clean fresh combination of
   `review.active: false` and `review.verdict: "PENDING"` is not automatically
@@ -77,8 +109,10 @@ At loop start, create `.ed3d/orchestrate-state.json` in the working directory of
 - A stale `"granted"` value, prior plan path, SHA, nonce, history, or correction
   attempt cannot survive a new task. Bare resume, malformed state, or a task /
   plan mismatch never authorizes a builder.
-- If read-only plan mode prevents the reset write, the plan artifact records
-  this permitted handoff section:
+- If read-only plan mode prevents archive/reset writes, defer both; do not
+  weaken ownership or agent-status checks. Only read-only research/planning
+  may proceed, with no application or state writes. The sole writable plan
+  artifact records this permitted handoff section:
 
   ```markdown
   ## Orchestration Handoff
@@ -89,11 +123,14 @@ At loop start, create `.ed3d/orchestrate-state.json` in the working directory of
   - approval: pending
   ```
 
-  This is a **pending record, not authorization**. On leaving plan mode, apply
-  the reset, verify the state task and absolute plan path, and write
+  This is a **pending record, not authorization**. On leaving plan mode,
+  recheck ownership and stopped agents, archive the prior state, apply the
+  reset, verify the state task and absolute new plan path, and write
   `reset_pending: false` in control-plane handling before approval. If the
   record is missing, duplicated, or does not match the requested task,
-  execution remains refused.
+  execution remains refused. The original fresh-task request authorizes this
+  deferred reset when writes are permitted; do not add another reset approval
+  gate. Implementation still requires its separate approval.
 
 The review block's `history` field is the append-only round record:
 
@@ -135,7 +172,7 @@ The command distinguishes exactly three resume paths:
 | **authorized ownership transfer** | `transfer_pending` retains the old `session_id` and matching `transfer_from`; explicit `resume` with a different live session and matching task/plan/phase replaces the owner and clears `transfer_from` |
 | **explicit legacy recovery** | missing/malformed ownership or `recovery_required`; explicit identity-bearing `resume` with matching task and absolute plan normalizes ownership without inferring a dispatch or verdict |
 
-An unauthorized non-transfer session is refused without mutation. While
+An unauthorized non-transfer session continuing an unfinished loop is refused without mutation. While
 `transfer_pending`, the old owner's stop is allowed so `/clear` can complete;
 the new session cannot inherit ownership before the explicit claim. Stop events
 accept both `sessionId` and `session_id`. Missing identity or invalid binding
@@ -146,7 +183,8 @@ the state or claims a review result.
 
 At the fresh-task transition, read the live session identity before doing
 work. If it is present, write `ownership.status: owned` with the exact
-`session_id`, current task, absolute plan, and phase, then re-read the state
+`session_id`, new task and phase, and `plan_path: null` until the new plan
+exists; then re-read the state
 file. If the session identity is unavailable, keep the state unowned (or set
 malformed legacy state to `recovery_required`), do not dispatch or claim a
 verdict, and report `ownership-recovery-required`; identity must never be
@@ -438,6 +476,6 @@ Final report to the operator:
 | "Medium/low findings — I'll fix them all anyway to be safe" | Your call, but not required — this loop ships with advisory findings listed. Don't burn rounds on them. |
 | "The stop hook keeps blocking; I'll just keep stopping" | The hook blocks while the review loop is active. Finish the loop (SHIP) or circuit-break (round > max_rounds, operator decides). |
 | "I got VERDICT: SHIP — the loop is done, I'll report and stop" | No. Commit the verdict to the state file in the same turn first, reset `consecutive_blocks` to 0, re-read the state file, and only then report. A SHIP that the file doesn't record turns into guardrail blocks that leak into your reviewers' context. |
-| "No argument was provided, so I need a new task" | Not if a state file exists. Resume the recorded loop first. |
+| "No argument was provided, so I should resume or ask for a task" | Use the latest user request first. A named fresh task wins over auto-resume; otherwise validate the recorded loop. |
 | "The project exists now, so review can compare commits" | Not unless `base_sha` and `head_sha` are valid commits. Create/record the baseline before implementation and verify both SHAs before review. |
 | "I'll dispatch a builder from a builder" | No. No nested subagents. Ever. You dispatch; they work and return. |

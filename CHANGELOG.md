@@ -1,5 +1,15 @@
 # Changelog
 
+## [ed3d-orchestrate] [0.6.2]
+
+Selects fresh tasks from the user request before auto-resume, even with empty command arguments.
+
+**Fixed:**
+- Archives prior orchestration state and applies the canonical fresh state before research or dispatch, without carrying old approval, plan, ownership or review bindings.
+- Preserves ownership and running-agent protections, read-only pending-reset handling, application work and prior evidence. A confirmed completed loop does not need a resume transfer just to start another task.
+
+Catalog version is 2.2.4. Versions 0.6.1 / 2.2.3 are reserved by the separate model-selection branch; this release does not include that change.
+
 ## [ed3d-orchestrate] [0.6.0]
 
 Hardens review-loop isolation, provenance-aware reconciliation, and bounded recovery for GitHub Copilot CLI.

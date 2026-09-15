@@ -2,7 +2,19 @@
 
 Durable context for humans and agents picking this work up after a break. Each entry says what it is, why it matters, and the concrete next action. Update this file when items land or new ones emerge — it is the project's memory.
 
-Last updated: 2026-09-03
+Last updated: 2026-09-15
+
+## Landed: explicit fresh-task transitions (0.6.2)
+
+- Command and skill resolve the latest user request before auto-resume, including
+  empty command arguments. Fresh state is applied before research or dispatch,
+  after ownership/agent checks and archival of prior state.
+- A confirmed completed loop needs no transfer to start another task; unfinished
+  loops retain ownership protections. Read-only planning defers archive/reset
+  through the existing `reset_pending` handoff.
+- This is protocol guidance, not automatic hook cleanup. Static contracts and
+  offline agent scenarios cover selection and preservation; live task-to-task
+  transition reliability remains to be observed.
 
 ## Landed: review-loop owner isolation and bounded lineage recovery (2026-09-12)
 
