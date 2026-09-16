@@ -5,11 +5,31 @@ argument-hint: "[task-description]"
 
 # Orchestrate
 
+## Interpret the requested transition first
+
+Determine intent from the latest user request as well as `$1`. An empty command
+argument does not mean resume when the surrounding message identifies a new
+task. Resolve the task once and use it throughout; do not ask the operator to
+repeat a task merely to populate `$1`.
+
+"Start a new task", "start a new orchestrate session for #N", or "clean up/reset
+the orchestrate state so we can start #N" selects a fresh loop, not the previous
+loop. A new chat or `/clear` alone does not select a new task. Explicit `resume`
+preserves the current task under the existing resume rules. Clarify conflicting
+task/resume instructions or ambiguous "clean up" before any state mutation.
+
+After locating the repository, use the fresh-task transition in
+`orchestrating-the-loop` before research, branch/bookmark changes, or agent
+dispatch. Resolve prior ownership and running agents, preserve the old state as
+evidence, then apply and re-read the canonical fresh state for the resolved task.
+The ownership protections and read-only `reset_pending` exception below apply;
+task selection is not implementation approval.
+
 ## Auto-resume mode
 
 Before asking for a task, locate `.ed3d/orchestrate-state.json` with direct file reads only — never a search: inside a git repository, resolve the root with `git rev-parse --show-toplevel` and read `<root>/.ed3d/orchestrate-state.json`; outside one, check `.ed3d/orchestrate-state.json` in the current directory and, if absent, its immediate parent (only if still within the same project tree). Do not use recursive glob patterns or `find`-style searches, and never request access to directories outside the project — an unbounded walk-up prompts for `/` access (observed in 0.3.1's first live run).
 
-If `$1` is `resume`, or if `$1` is empty and the valid state file passes the
+Only when no fresh task was selected above: if `$1` is `resume`, or if `$1` is empty and the valid state file passes the
 validated in-progress checks (`phase: "execute" or "review"`, a non-empty
 absolute existing `plan_path`, and a task matching the plan context) while
 either preserving a plan-bound execute checkpoint for its pending approval or
@@ -23,17 +43,19 @@ fresh combination with no bound plan and `review.active: false` /
 4. Engage the `orchestrating-the-loop` skill to continue from the recorded phase — do not restart or repeat completed phases.
 5. **Resume does not grant approval; a bare auto-resume is refused.** Resuming is not, by itself, authorization to dispatch builders. If the state file records `gate.approval: "pending"` (or the field is absent, malformed, or partial), do not dispatch any builder — present the operator approval checkpoint (reply **continue**) and wait for the explicit authorization to be processed. Only after that authorization is recorded as `gate.approval: "granted"` in the state file — written in the same turn, immediately before the first builder dispatch — may builders start. Resuming into `phase: "execute"` with approval still `"pending"` re-presents the checkpoint rather than rolling into dispatch.
 
-If `$1` is `resume` and no state file exists, say so and ask for the task. If `$1` is empty and no state file exists, ask the operator what they want accomplished before engaging the loop. If the state file records a completed loop (`review.active: false` and `review.verdict: "SHIP"`), report it as completed — task and round count from `review.history` — and ask for the new task instead of resuming.
+If an explicit resume has no state file, say so and ask for the task. If no task was supplied in either the arguments or the latest user request and no state file exists, ask what to accomplish. If no fresh task was selected and the state records a completed loop (`review.active: false` and `review.verdict: "SHIP"`), report it as completed with its task and round count; ask for a new task rather than resuming.
 
 ## Reset and resume safety
 
-- A **non-empty task argument always starts a fresh loop**. It never
-  auto-resumes. Reset every task, plan, approval, SHA, and review field before
+- A **non-empty task argument always starts a fresh loop**; `resume` is a
+  control argument, not a task. A fresh task identified in the latest user
+  request has the same effect. Subject to the ownership and evidence-preservation
+  checks in the skill, reset every task, plan, approval, SHA, and review field before
   planning: `task`, `plan_path`, `base_sha`, `head_sha`, `phase`,
   `gate.approval`, the `handoff` block, `review.max_rounds`, history, counters,
   and nonce. Existing plans and commits remain untouched; only the control
   plane is reset.
-- An **empty invocation may resume only** when the state is valid and
+- An **empty invocation may resume only** when no new task was selected and the state is valid and
   in-progress: `phase: "execute" or "review"`, a non-empty absolute `plan_path` that exists,
   and a task that matches the plan context. The unbound clean fresh combination
   with `review.active: false` and `review.verdict: "PENDING"` is not an
@@ -88,7 +110,7 @@ not an implicit owner claim. The stop hook reads both `sessionId` and
 | **authorized ownership transfer** | `transfer_pending`, `transfer_from` equal to the old `session_id`, explicit `$1=resume`, a different live session, and matching task/absolute plan/phase; replace the owner, clear `transfer_from`, and preserve pending approval or active/PENDING review |
 | **explicit legacy recovery** | missing/malformed ownership or `recovery_required`, explicit `$1=resume`, live identity, and matching task/absolute plan/phase; bind the new owner without inferring dispatch or verdict |
 
-A different session without a valid transfer marker is an unauthorized
+A different session continuing an unfinished loop without a valid transfer marker is an unauthorized
 non-transfer session and is refused without mutation. An old owner may stop
 while `transfer_pending`; a new session is silently allowed before its claim.
 Missing event identity or malformed transfer emits the stable
@@ -96,9 +118,10 @@ Missing event identity or malformed transfer emits the stable
 
 ### Executable ownership and provenance checklist
 
-For a fresh task, read the live session identity before any phase transition.
+For a fresh task, first apply the skill's retirement/archive checks, then read the live session identity before any phase transition.
 When it is available, write `ownership.status: owned` with that exact
-`session_id`, the current task, absolute plan, and phase, then re-read the
+`session_id`, the new task and phase, and `plan_path: null` until its own plan
+exists; then re-read the
 state file before dispatching or enabling review. If the session identity is unavailable,
 leave the state unowned (or mark malformed legacy state
 `recovery_required`), do not dispatch, do not claim ownership, and surface
@@ -171,13 +194,14 @@ This exhausted protocol-failure path must never SHIP.
 
 ## Normal mode
 
-$1 contains the task description. If it is empty or vague after the auto-resume check above, ask the operator what they want accomplished — do not guess a task.
+Use the resolved task from the latest user request and arguments. Ask what to
+accomplish only if that task is absent or unclear after transition selection.
 
 1. **Verify the working directory and git baseline.** Confirm you are inside the repository where the work will happen. The loop requires a local git repository with at least one commit because adversarial review needs a valid `BASE_SHA..HEAD_SHA` range. If no git repo exists and the directory is empty or the task is to create a new project, initialize git and create an initial commit before research. If no git repo exists in a non-empty directory, ask before initializing. If a git repo exists but has no commits, create an initial commit before implementation. The loop maintains `.ed3d/orchestrate-state.json` in that repository's root — read it there directly (the guardrail hook does its own in-process walk-up from the working directory; that is its mechanism, not an instruction to you). If you are in the wrong place, `cd` to the right repository first.
 
 2. **Engage the `orchestrating-the-loop` skill** (ed3d-orchestrate) and run it end-to-end for this task:
 
-   Task: $1
+   Task: <resolved task from the latest user request and arguments>
 
 3. Follow the skill exactly: research (scout-sweep) → plan document → plan-review gate → **operator approval checkpoint** → builder execution → adversarial review rounds → final report. The plan-review pass is followed by an explicit approval checkpoint before any builder dispatch: the orchestrator ends its turn and offers the two approval paths — reply **continue** to proceed in the same context, or `/clear` then resume with a fresh context. Maintain `.ed3d/orchestrate-state.json` at every transition, record the plan document's absolute path as `plan_path` as soon as it is written so resume can find it, record a valid `BASE_SHA` before builder execution so review has a real diff range, and write `gate.approval: "granted"` to the state file in the same turn, immediately before the first builder dispatch, only after the operator's explicit `continue`/resume authorization is processed — never dispatch while approval is `"pending"`, stale, malformed, or partial.
 

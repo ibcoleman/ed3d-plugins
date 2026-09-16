@@ -145,7 +145,7 @@ Run the tests: `python3 plugins/ed3d-orchestrate/hooks/test-check-review-loop.py
 
 ## The Adversary Write-Guard
 
-`hooks/adversary-write-guard.py` runs on preToolUse (write-class tools) and mechanically enforces the adversary's no-writes rule: while `review.active` is true and `review.verdict` is `PENDING` — the adversary-in-flight window, at every round — write-class tool calls (`edit`, `create`, `apply_patch`, plus legacy Edit/Write variants) from subagent contexts (`call_`-prefixed session ids) are blocked with a diagnostic reason; the reviewer reports findings instead of fixing them. The orchestrator (UUID session id), builders, and the bug-fixer (which runs while verdict is `FIX-FIRST`) are never blocked. If a crashed loop leaves stale active+PENDING state on disk and legitimate subagent writes get blocked, delete or repair `.ed3d/orchestrate-state.json` — the block reason names its path. Known gap: writes via bash redirection are not intercepted; the prose rule remains the backstop there.
+`hooks/adversary-write-guard.py` runs on preToolUse (write-class tools) and mechanically enforces the adversary's no-writes rule: while `review.active` is true and `review.verdict` is `PENDING` — the adversary-in-flight window, at every round — write-class tool calls (`edit`, `create`, `apply_patch`, plus legacy Edit/Write variants) from subagent contexts (`call_`-prefixed session ids) are blocked with a diagnostic reason; the reviewer reports findings instead of fixing them. Parent writes are not blocked. Builders normally run outside that window and fixers while verdict is `FIX-FIRST`; stale active+PENDING state can block their write tools too. Use the ownership-aware fresh-task or resume recovery rules below rather than blindly deleting the state file. Known gap: writes via bash redirection are not intercepted; the prose rule remains the backstop there.
 
 Run its tests: `python3 plugins/ed3d-orchestrate/hooks/test-adversary-write-guard.py` (standalone, zero dependencies). The dispatch-protocol suite is `python3 scripts/test-dispatch-protocol.py`.
 
@@ -175,17 +175,37 @@ Watch `.ed3d/orchestrate-state.json` as the loop runs — phase and review trans
 Builders and reviewers run in isolated subagent contexts, but the orchestrating session accumulates every printed subagent response. After the plan-review gate passes, the orchestrator stops at an **operator approval checkpoint** and offers the two approval paths: reply *continue* to approve and proceed in the same context, or, when a different session is required, write `transfer_pending` before `/clear`, resume, and then process *continue* in the fresh context. `/clear` alone is only a context handoff, not approval or an ownership claim — the loop records its full position in the state file (`phase`, `plan_path`, the SHAs, the review block), and completed phases are never repeated. A clean plan-review result does not by itself authorize execution: the approval response is processed before any builder dispatch.
 
 A **non-empty task argument always starts a fresh loop** rather than
-auto-resuming. It resets every task, plan, approval, SHA, and review field,
-including the handoff status, correction attempts, `review.max_rounds`,
-history, counters, and nonce; existing plans and commits remain untouched.
-An **empty invocation may resume only** a validated state with
+auto-resuming (`resume` is a control argument, not a task). A new task identified
+in the latest user request has the same effect even when the command argument
+is empty. Resolve intent before auto-resume; clarify conflicting instructions or
+ambiguous "clean up". A new chat or `/clear` alone is not a new task.
+
+Before research, branch/bookmark changes, or agent dispatch, the orchestrator
+resolves prior ownership and confirms no agents remain running. An unfinished
+loop owned by another session still requires the existing transfer/recovery
+rules; a confirmed completed loop with no agents needs no transfer just to start
+a different task. A confirmed abandoned loop also needs no transfer, with
+evidence of prior human-authorized abandonment and stopped agents. Neither an
+inactive flag nor an empty agent list proves that. Abandonment preserves work
+and does not imply SHIP.
+
+Archive the prior state to a unique path in session artifacts, verify the copy,
+and report its location. Then replace the current state with the skill's
+canonical fresh object: resolved task, `plan_path: null`, null SHAs, pending
+approval, new live ownership, and clean handoff/review state including
+`review.provenance` and `review.recovery`. Re-read it before new work. Existing
+application changes, plans, commits, branches/bookmarks and evidence remain
+untouched. This is proactive protocol guidance, not automatic hook cleanup.
+
+An **empty invocation may resume only** when no fresh task was selected and there is a validated state with
 `phase: "execute" or "review"`, a non-empty absolute `plan_path` that exists,
 and a task that matches the plan context. The clean fresh combination is
 `review.active: false` and `review.verdict: "PENDING"` and is not treated as
 an in-progress loop. Malformed, partial, legacy, or mismatched state fails
 closed.
 
-If read-only planning prevents a reset write, the plan contains this simple
+If read-only planning prevents archive/reset writes, defer both; ownership and
+agent-status checks still apply. The plan contains this simple
 pending handoff record:
 
 ```markdown
@@ -198,7 +218,8 @@ pending handoff record:
 ```
 
 It is a **pending record, not authorization**. Once planning ends, the
-orchestrator applies the reset, verifies the task and absolute plan path, and
+orchestrator rechecks ownership and stopped agents, archives the prior state,
+applies the reset, verifies the task and absolute new plan path, and
 changes `reset_pending: false` in its control-plane handling before approval.
 Missing, duplicated, or mismatched records leave execution refused; execution remains refused
 until the reset is applied.
@@ -228,12 +249,11 @@ progress to reset `consecutive_blocks`. The hook keeps its atomic
 temporary-file replacement, but does not protect concurrent model-mediated state edits.
 This remains procedural and protocol-only.
 
-After `/clear`, run `/ed3d-orchestrate:orchestrate` with no arguments — when
-the state file is a validated in-progress loop, the command resumes from the
-recorded phase, reports where the loop stands, and re-presents any pending
-approval checkpoint. The explicit `resume` argument still works, and you can
-`/clear` + resume at any other phase boundary on your own initiative; the state
-file is current at every transition.
+For same-owner continuation with no new task, a bare command can resume a
+validated in-progress loop. For a different session after `/clear`, prepare
+`transfer_pending` first and use explicit `resume`; then process any pending
+approval. To start a different task instead, name it in the command or surrounding
+request. Neither a context reset nor old SHIP evidence approves the new task.
 
 ## 0.5.0 — Enforcement Branch B (protocol-only)
 
