@@ -44,6 +44,7 @@ Rough Idea
 | **`ed3d-hook-security-hardening`** | PreToolUse and PostToolUse hooks that catch secrets leakage patterns |
 | **`ed3d-hook-jj-git-safety`** | Copilot-only. GitHub Copilot CLI-only preToolUse hook and Agent Skill that protect jj + Git repositories from unsafe mutations and jj metadata pollution; POSIX/WSL only |
 | **`ed3d-completion-summary`** | Copilot CLI-only. sessionStart reminder hook + work-completion-summary Agent Skill for end-of-work executive handoffs. Inactive by default; explicit deployment required |
+| **[`ed3d-native-orchestration`](plugins/ed3d-native-orchestration/README.md)** | Copilot-only v0 candidate. Explicitly invoked Agent Skill for direct work, useful native delegation, and parent-owned integration. No hooks or runtime service |
 | **`ed3d-session-reflection`** | EXPERIMENTAL. Session awareness and conversation review tooling. Requires `ed3d-extending-claude` |
 | **`ed3d-orchestrate`** | EXPERIMENTAL. Polytoken-style orchestration loop for Copilot CLI: scout-sweep research, plan-review gate, builder fanout, adversarial review rounds with a stop-guardrail hook. 0.5.0 handoff gate is protocol-only (Branch B). Requires `ed3d-research-agents` + `ed3d-plan-and-execute` |
 
@@ -64,6 +65,18 @@ The historical Claude Code plugins are available from the `ed3d-plugins` marketp
 
 `ed3d-hook-jj-git-safety` is a Copilot CLI-only package and is not installed through Claude Code. Follow its plugin README for explicit Copilot hook and skill deployment. `ed3d-completion-summary` follows the same model — see its plugin README for explicit Copilot hook and skill install paths.
 
+`ed3d-native-orchestration` is a separate Copilot-only candidate, not a migration.
+Use its [file-guided entry point](plugins/ed3d-native-orchestration/README.md)
+without installation, or explicitly opt into repo-local skill discovery.
+Catalog membership does not activate it or change the existing workflow.
+
+Both orchestration packages remain available. Choose one per fresh session and
+compare them in separate sibling workspaces with no inherited active
+`.ed3d/orchestrate-state.json`. The old workflow's enabled write guard is
+review-wide and can block another workflow's subagents in the same workspace;
+the native candidate adds no hooks. Verify each plugin's discovery after
+installation before drawing conclusions from live comparisons.
+
 ## Repository Structure
 
 ```
@@ -83,6 +96,7 @@ ed3d-plugins/
 │   ├── ed3d-hook-security-hardening/
 │   ├── ed3d-hook-jj-git-safety/
 │   ├── ed3d-completion-summary/
+│   ├── ed3d-native-orchestration/
 │   ├── ed3d-session-reflection/
 │   └── ed3d-orchestrate/
 └── README.md
@@ -92,8 +106,8 @@ ed3d-plugins/
 
 This repository is Copilot-targeted. Copilot CLI reads the repo-root [`AGENTS.md`](AGENTS.md) as its primary instructions, so those are the canonical agent instructions and conventions. The plugins and packages here load under GitHub Copilot CLI:
 
-- Every role agent ships a Copilot-native `<name>.agent.md` twin beside its Claude Code `<name>.md` definition — same body and strict-quoted frontmatter. Twins are model-free; orchestrated model selection is applied at dispatch time via pinned-first attempts with Auto fallback (`gpt-6-astra` / medium for the adversary, `gpt-5.6-luna` / high for everything else). Direct agent launches outside that dispatch path inherit the account/CLI default unless configured through Copilot's `/subagents` command. The Claude Code files are untouched.
-- `ed3d-orchestrate` is a Copilot-first plugin implementing the full orchestration loop (scout sweep → plan → plan review → builders → adversarial review rounds) with an `agentStop` guardrail hook. It installs under Claude Code too, but its workflow targets Copilot sessions. Model bindings are pinned by the plugin's skills on every dispatch — no extra configuration required.
+- Every role agent ships a Copilot-native `<name>.agent.md` twin beside its Claude Code `<name>.md` definition — same body and strict-quoted frontmatter. Twins are model-free; orchestrated dispatches omit model and effort overrides and inherit Copilot's configured subagent settings. Direct agent launches also use configured preferences; manage those through Copilot's `/subagents` command. The Claude Code files are untouched.
+- `ed3d-orchestrate` is a Copilot-first plugin implementing the full orchestration loop (scout sweep → plan → plan review → builders → adversarial review rounds) with an `agentStop` guardrail hook. It installs under Claude Code too, but its workflow targets Copilot sessions. It preserves configured model preferences rather than selecting models itself.
 - `ed3d-hook-jj-git-safety` is a Copilot CLI-only package. It is cataloged here for distribution and versioning, but it is not a Claude Code plugin; deploy its hook and skill using the package README's Copilot instructions.
 
 Run `python3 scripts/validate_plugins.py` (stdlib-only, zero dependencies) to check twin frontmatter, model bindings, dispatch-protocol rules, and marketplace integrity. Run `python3 scripts/test-dispatch-protocol.py` alongside the orchestrate hook suites for focused dispatch-protocol coverage.

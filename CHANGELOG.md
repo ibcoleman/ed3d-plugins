@@ -1,5 +1,29 @@
 # Changelog
 
+## [ed3d-orchestrate] [0.6.4]
+
+Restores configured Copilot subagent settings while retaining the existing review-gated workflow.
+
+**Changed:**
+- Omits model and reasoning-effort overrides for scouts, reviewers, builders, adversaries, fixers, and retries; removes repository-selected fallback models.
+- Preserves approval gates, reviewer lineage, bounded recovery, and existing rate-limit/protocol-failure retry limits.
+- Documents fresh, separate workspace comparisons with the independently selectable native workflow.
+
+**Fixed:**
+- Replaces stale pin-requiring validation with configured-dispatch regression checks, including positive controls and injected-policy failures.
+
+## [ed3d-native-orchestration] [0.1.0]
+
+Adds a separate advisory workflow without replacing `ed3d-orchestrate`.
+
+**New:**
+- Explicit-use skill for proportional delegation, parent-owned integration, and verification.
+- File-guided entry point, optional repo-local discovery instructions, and offline package checks.
+
+Catalog version is 2.3.0 for the combined release candidate, including
+`ed3d-session-reflection` 0.3.1. Publication, installed discovery, and real-world
+comparisons remain separate steps.
+
 ## [ed3d-session-reflection] [0.3.1]
 
 Verifies transcript identity and reviewer prerequisites before session review.

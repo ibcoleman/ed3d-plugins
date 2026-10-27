@@ -28,6 +28,8 @@ outside the strict set that fails parse or quoting lint.
 Zero external dependencies (stdlib only): the frontmatter parser is built
 in and handles exactly the scalar grammar the strict set uses.
 """
+# pattern: Mixed (unavoidable)
+# Repository checks read artifacts and accumulate diagnostics in one standalone script.
 import json
 import os
 import re
@@ -75,8 +77,7 @@ ORCHESTRATE_STRICT_MD = [
 OVERRIDE_KEYS = ("model:", "reasoning_effort:", "effort:", "effortLevel:")
 FORBIDDEN_GLOBAL_STRINGS = ("gemini-3.5-flash", "Always pin", "pinned model")
 
-# These are raw-text bans. Preferred literals are allowed only inside the bounded
-# dispatch sections below; agent frontmatter and command prose remain model-free.
+# Dispatch instructions and agent frontmatter inherit configured settings.
 POLICY_FORBIDDEN = {
     path: list(OVERRIDE_KEYS) + list(FORBIDDEN_GLOBAL_STRINGS)
     for path in ORCHESTRATE_STRICT_MD
@@ -93,17 +94,21 @@ SKILL_PATHS = [
     "plugins/ed3d-orchestrate/skills/orchestrating-the-loop/SKILL.md",
     "plugins/ed3d-orchestrate/skills/scout-sweep/SKILL.md",
 ]
-OLD_NO_MODEL_NEEDLES = (
-    "Use the account's Auto/default model selection",
-    "Do not select a model or set an effort override",
-    "leaving model selection to the account's Auto/default",
-    "Do not select or pin a model in dispatch instructions",
-    "Send no model or effort override",
-    "without model or effort parameters",
-    "without model or effort overrides",
-    "leave model selection unset",
-    "account/CLI defaults decide both",
-    "Auto/default applies",
+DISPATCH_DOCS = (
+    "README.md",
+    "plugins/ed3d-orchestrate/README.md",
+    "ORCHESTRATE_BRIEF.md",
+)
+DISPATCH_OMISSION = "Omit both `model` and `reasoning_effort` on every dispatch"
+DISPATCH_SETTINGS = "Copilot's configured subagent settings"
+DISPATCH_OVERRIDE = re.compile(
+    r"""\b(?:model|reasoning_effort|effort|effortLevel)["']?\s*[:=][ \t]*\S"""
+    r"""|<parameter\s+name=["'](?:model|reasoning_effort|effort|effortLevel)["']""",
+    re.IGNORECASE,
+)
+MODEL_LITERAL = re.compile(
+    r"\b(?:gpt-\d[\w.-]*|claude-(?:haiku|sonnet|opus)-[\w.-]+|gemini-\d[\w.-]*)",
+    re.IGNORECASE,
 )
 
 POLICY_TARGETS = {
@@ -120,7 +125,7 @@ POLICY_TARGETS = {
         "Use this checklist and do not skip the re-read", "consecutive_blocks: 0", "both are valid commits in the current git repository",
         "verify the terminal state", "Whenever a review arms — including re-arming an existing inactive review block",
         "refresh `head_sha` in the state file to the new full 40-character", 'and `verdict` to `"PENDING"` in the same state-file write',
-        DISPATCH_BEGIN, DISPATCH_END, "adversary` dispatch", "task-bug-fixer", "gpt-6-astra", "gpt-5.6-luna", "reasoning_effort=", "pre-start rejection",
+        DISPATCH_BEGIN, DISPATCH_END, "adversary` dispatch", "task-bug-fixer",
         "rate-limit", "protocol-failure", "ambiguous", "full response",
     ],
     "plugins/ed3d-orchestrate/skills/orchestrating-the-loop/SKILL.md": [
@@ -130,11 +135,11 @@ POLICY_TARGETS = {
         "verify the git baseline", '"base_sha": null', '"head_sha": null', "record `head_sha` from the current `HEAD`",
         "review.consecutive_blocks: 0", "A named fresh task wins over auto-resume; otherwise validate the recorded loop.", '"nonce": null', "generate a fresh nonce",
         "adversary dispatch is in flight", "write-guard hook mechanically blocks write-class tool calls", DISPATCH_BEGIN, DISPATCH_END,
-        "plan-reviewer", "task-implementor-fast", "gpt-5.6-luna", "reasoning_effort=", "pre-start rejection",
+        "plan-reviewer", "task-implementor-fast",
         "rate-limit", "protocol-failure", "ambiguous", "full response",
     ],
     "plugins/ed3d-orchestrate/skills/scout-sweep/SKILL.md": [
-        AGENT_DISPATCH_POLICY, DISPATCH_BEGIN, DISPATCH_END, "scouts use pinned-first", "gpt-5.6-luna", "reasoning_effort=", "pre-start rejection",
+        AGENT_DISPATCH_POLICY, DISPATCH_BEGIN, DISPATCH_END, "scouts",
         "rate-limit", "protocol-failure", "ambiguous", "full response",
     ],
     "plugins/ed3d-orchestrate/commands/orchestrate.md": [
@@ -359,73 +364,27 @@ def dispatch_section(text, path):
 
 
 def check_dispatch_protocol():
-    combined = "\n".join(read(path) for path in SKILL_PATHS)
-    for needle in OLD_NO_MODEL_NEEDLES:
-        if needle in combined:
-            fail("skills: residual old no-model dispatch phrase %r" % needle)
     sections = {path: dispatch_section(read(path), path) for path in SKILL_PATHS}
-    for path in ORCHESTRATE_STRICT_MD:
+    for path in [*ORCHESTRATE_STRICT_MD, *DISPATCH_DOCS]:
         body = read(path)
-        if path in sections:
-            bounded = sections[path]
-            outside = body.replace(DISPATCH_BEGIN + bounded + DISPATCH_END, "")
-            for literal in ("gpt-5.6-sol", "gpt-6-astra", "gpt-5.6-luna"):
-                if literal in outside:
-                    fail("%s: preferred literal outside bounded dispatch section %r" % (path, literal))
-        else:
-            for literal in ("gpt-5.6-sol", "gpt-6-astra", "gpt-5.6-luna"):
-                if literal in body:
-                    fail("%s: preferred literal outside dispatch skill %r" % (path, literal))
+        if DISPATCH_OVERRIDE.search(body) or MODEL_LITERAL.search(body):
+            fail("%s: model or effort pin contradicts configured dispatch settings" % path)
+        normalized = " ".join(body.split()).lower()
+        for stale in ("pinned-first", "preferred model", "auto fallback"):
+            if stale in normalized:
+                fail("%s: obsolete dispatch policy %r" % (path, stale))
+        if path in DISPATCH_DOCS and DISPATCH_SETTINGS not in " ".join(body.split()):
+            fail("%s: missing configured subagent settings guidance" % path)
     required = {
-        SKILL_PATHS[0]: ("gpt-6-astra", "medium", "adversary` dispatch", "task-bug-fixer", "gpt-5.6-luna", "high"),
-        SKILL_PATHS[1]: ("gpt-5.6-luna", "high", "plan-reviewer", "gpt-5.6-luna", "high", "task-implementor-fast"),
-        SKILL_PATHS[2]: ("gpt-5.6-luna", "high", "scouts use pinned-first"),
+        SKILL_PATHS[0]: ("adversary", "task-bug-fixer"),
+        SKILL_PATHS[1]: ("plan-reviewer", "task-implementor-fast"),
+        SKILL_PATHS[2]: ("scouts",),
     }
-    for path, needles in required.items():
-        body = sections[path]
-        for needle in needles:
+    for path, roles in required.items():
+        body = " ".join(sections[path].split())
+        for needle in (DISPATCH_OMISSION, DISPATCH_SETTINGS, *roles):
             if needle not in body:
-                fail("%s: missing bounded dispatch needle %r" % (path, needle))
-        if re.search(r"\b(?:high|medium|low)\b", body) is None:
-            fail("%s: bounded section has no effort literal" % path)
-        for forbidden in ("critical/high", "medium/low"):
-            # Severity labels are allowed and must not be mistaken for effort syntax.
-            if forbidden in body and re.search(r"reasoning_effort=\"(?:high|medium|low)\"", body) is None:
-                fail("%s: bounded section contains severity label %r but no explicit reasoning_effort override; severity labels do not satisfy the effort requirement" % (path, forbidden))
-    # Exact site-level positives, scoped to the relevant skill rather than a
-    # protocol paragraph in an unrelated file.
-    site_needles = {
-        SKILL_PATHS[0]: ("Site requirement: the primary `adversary` dispatch is pinned-first", "For the FIX-FIRST branch, dispatch `task-bug-fixer`"),
-        SKILL_PATHS[1]: ("Dispatch `plan-reviewer`", "Site requirement: the Phase 4 `task-implementor-fast` dispatch is pinned-first"),
-        SKILL_PATHS[2]: ("Site requirement: scouts use pinned-first",),
-    }
-    for path, needles in site_needles.items():
-        body = sections[path]
-        for needle in needles:
-            if needle not in body:
-                fail("%s: missing explicit dispatch-site needle %r" % (path, needle))
-
-    # A role/site must carry its exact model+reasoning_effort pair on the
-    # dispatch line itself.  Checking these together prevents severity labels
-    # such as ``critical/high`` from satisfying an effort-only substring test.
-    site_override_pairs = {
-        SKILL_PATHS[0]: (
-            ("adversary` dispatch", 'model="gpt-6-astra"', 'reasoning_effort="medium"'),
-            ("task-bug-fixer", 'model="gpt-5.6-luna"', 'reasoning_effort="high"'),
-        ),
-        SKILL_PATHS[1]: (
-            ("plan-reviewer", 'model="gpt-5.6-luna"', 'reasoning_effort="high"'),
-            ("task-implementor-fast", 'model="gpt-5.6-luna"', 'reasoning_effort="high"'),
-        ),
-        SKILL_PATHS[2]: (
-            ("each scout's first attempt", 'model="gpt-5.6-luna"', 'reasoning_effort="high"'),
-        ),
-    }
-    for path, pairs in site_override_pairs.items():
-        body = sections[path]
-        for role, model, effort in pairs:
-            if not any(role in line and model in line and effort in line for line in body.splitlines()):
-                fail("%s: missing exact model+reasoning_effort pair for %r" % (path, role))
+                fail("%s: missing configured dispatch requirement %r" % (path, needle))
 
 
 def check_policy_strings():

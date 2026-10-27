@@ -2,7 +2,127 @@
 
 Durable context for humans and agents picking this work up after a break. Each entry says what it is, why it matters, and the concrete next action. Update this file when items land or new ones emerge — it is the project's memory.
 
-Last updated: 2026-09-15
+Last updated: 2026-10-27
+
+## Release preparation: both orchestration workflows (2026-10-27)
+
+- The operator approved reconciling the two local release lines and retaining
+  both `ed3d-orchestrate` and `ed3d-native-orchestration` as distinct choices.
+  Catalog 2.3.0 combines orchestrate 0.6.4, native-orchestration 0.1.0, and the
+  session-reflection 0.3.1 fixes. This is local release preparation, not a
+  publication or installed-plugin update.
+- Orchestrated dispatches omit model and effort overrides and inherit
+  configured Copilot subagent settings. The historical model preferences below
+  are superseded; no CLI preferences, hook registrations, approval gates, or
+  review-state contracts are changed by this policy correction.
+- For the planned real-world comparison, use fresh sessions and separate sibling
+  workspaces without inherited active review state. Both packages may remain
+  installed, but the old workflow's enabled child write guard is review-wide.
+  No live coexistence or sustained-outcome claim follows from offline checks.
+- Next: publish the reviewed release when authorized, update/install both
+  plugins, confirm discovery, then compare real-world outcomes. Keep private
+  pilot material private; this integration does not authorize broader sharing
+  or activate #26.
+
+## Approved direction: shared native orchestration reference, independent projects (2026-10-10)
+
+- **Goal:** help the current Copilot parent deliver multi-part outcomes through
+  proportional native delegation, revisable dependencies, clear ownership,
+  parent-owned operator decisions, and verified synthesis. Use Polytoken's
+  orchestration behavior as the reference, not its runtime machinery. A separate
+  subcontext does not require a standalone or recursively launched Copilot CLI.
+- **Shared reference ([#24](https://github.com/ibcoleman/ed3d-plugins/issues/24)):**
+  the operator approved both projects using the same initial minimal
+  Polytoken-to-Copilot experimental adaptation. Start with session instructions,
+  translating only platform-specific references and recording unsupported
+  equivalents. Evaluate before choosing skill/plugin packaging or extra state,
+  hooks, scheduling, or mandatory review stages. The initial reference was created
+  privately in the 2026-10-10 bounded pilot; it remains session-only, uninstalled,
+  and unpublished. No reference revision was justified by that pilot.
+- **Greenfield ([#22](https://github.com/ibcoleman/ed3d-plugins/issues/22)):**
+  develop a new Copilot-native workflow from the shared reference and observed
+  needs. The existing plugin's architecture, plans, and backlog are not inputs.
+  Bounded design, implementation, documentation, and local validation were
+  authorized separately on 2026-10-10. The independent
+  `ed3d-native-orchestration` 0.1.0 candidate uses one Agent Skill with explicit
+  file-guided invocation and optional repo-local discovery, not a new runtime.
+  Its [acceptance record](plugins/ed3d-native-orchestration/tests/acceptance.md)
+  distinguishes package checks and actual task use from registry discovery and
+  unproven sustained behavior. The file-guided route completed a small direct
+  task and a package-delivery task with two native workers, independent parent
+  work, checker corrections, and verified integration. Registry/slash discovery
+  remains untested. No release, global installation, or matched old-versus-new
+  comparison is included.
+- **Incremental ([#23](https://github.com/ibcoleman/ed3d-plugins/issues/23)):**
+  evaluate existing `ed3d-orchestrate` against the same outcomes and reassess
+  #8-#17 against current and merged work before selecting bounded refinements.
+  Do not replace its foundation or automatically adopt greenfield solutions.
+- **Representative pilot ([#27](https://github.com/ibcoleman/ed3d-plugins/issues/27)):**
+  separately approved small direct work, useful native delegation with parent
+  integration, and a discovery that changes dependencies are recorded below.
+  The broader evaluation remains open. Observe
+  correctness, operator corrections, duplicate work, ownership, and coordination
+  overhead; use comparable direct work and available time/cost evidence where
+  needed. Do not require an exhaustive identity/event matrix first.
+- **Conditional diagnostics ([#26](https://github.com/ibcoleman/ed3d-plugins/issues/26)):**
+  deferred until an observed problem or a specific consequential guarantee
+  warrants a focused question. Each activated case needs proportionate evidence,
+  finite bounds, and approval. No automatic broad failure/recovery sequence.
+- **Retired prerequisite ([#25](https://github.com/ibcoleman/ed3d-plugins/issues/25)):**
+  closed as not planned/superseded, not successful. B01/C01 remain failed
+  standalone controls: permission denials and zero markers despite exit 0.
+  C01's immediate interpreter-path request and the missing documented exact-file
+  startup grant remain historical findings, not blockers on native delegation.
+  Original evidence, supervisor limits, and unexplained settings-hash changes
+  are retained in #24/#25; approvals are spent. The old #25 -> #27 -> #26
+  documentary prerequisite chain is retired.
+- **Sharing boundary:** the initial minimal reference, task scenarios, criteria,
+  and sanitized factual observations may be shared. Subsequent project-specific
+  designs, code, refinements, proposed fixes, and design conclusions remain
+  separate unless the operator approves further exchange. Future development
+  teams use fresh contexts and separate Jujutsu workspaces, preserving inherited
+  controls and unrelated work; workspace separation is not a security sandbox.
+- **Retained research:** the initial platform and six-session study remains in
+  `orchestration-shared-research.md`, in session
+  `fab11b72-f850-4e0e-9467-792473a4fd5f`'s `files/` directory. Private source and
+  raw session history stay private. Historical probe proposals there are not
+  current mandatory gates.
+- **First bounded pilot (2026-10-10, [#27](https://github.com/ibcoleman/ed3d-plugins/issues/27)):**
+  separately authorized session-only adaptation and two native read-only package
+  readers produced a Copilot-only upgrade-evidence brief. The parent integrated
+  both reports with 69 passing completion-summary assertions and 56 passing
+  safety layout assertions. Safety's full behavioral suite was not run: inspection
+  found real Git fixture operations incompatible with the Jujutsu-only boundary.
+  The parent revised that dependency and continued without operator clarification
+  or replacement machinery. Neither package's live CLI integration was verified.
+  One brief task establishes neither sustained behavior nor speed/cost benefits;
+  the broader evaluation remains open. Sanitized shared observations are in #24.
+- **Direct-parent comparison (2026-10-10, #27):** a separately authorized
+  activation/removal brief for the same packages was completed without subagents
+  or operator clarification. Its sources fit the parent; no worker handoffs were
+  needed. This qualitative comparison is confounded by different tasks and prior
+  package familiarity, not a measured speed/cost advantage. The initial reference
+  already permits direct work; no revision or packaging was justified.
+- **Incremental backlog reconciliation (2026-10-10, #23):** separately authorized
+  research completed a [requirement-level table and bounded shortlist](https://github.com/ibcoleman/ed3d-plugins/issues/23#issuecomment-6103083689)
+  comparing #8-#17 with #19-#21 and current implementation. Published main
+  and the local branch diverge; local changes must not be credited as shipped.
+  Technical classifications and ranked next changes belong in #23, not #22 or
+  the shared evaluation. The #24/#27 tracking now links both completed small-task
+  results and retains the unmeasured speed/cost and untested runtime limitations.
+- **Next actions:** the greenfield candidate is ready for a separately authorized
+  matched comparison using its demonstrated file-guided entry point; verify
+  repo-local discovery first if choosing the optional slash route. Exact local
+  revision and handoff are in #22. For the incremental project, select a bounded refinement
+  from #23's evidence rather than implement every open backlog request.
+  Sustained behavior remains unverified; #26 stays deferred.
+  The October 27 release preparation above separately authorizes integration
+  and configured-dispatch cleanup, not deployment. The initial draft remains
+  private, session-only, and uninstalled.
+  No Polytoken inference or broader cross-team solution sharing is authorized.
+
+The watcher idea below remains deferred; neither new Story implicitly includes
+building it.
 
 ## Landed: explicit fresh-task transitions (0.6.2)
 

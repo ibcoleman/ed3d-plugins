@@ -1,0 +1,18 @@
+{
+    "name": "ed3d-native-orchestration",
+    "description": "GitHub Copilot CLI-only advisory Agent Skill for direct work, proportional native delegation, and parent-owned integration. Explicit invocation; no hooks or runtime service.",
+    "version": "0.1.0",
+    "author": {
+        "name": "Ed",
+        "email": "ed@ed3d.net"
+    },
+    "homepage": "https://github.com/ibcoleman/ed3d-plugins",
+    "repository": "https://github.com/ibcoleman/ed3d-plugins",
+    "license": "UNLICENSED",
+    "keywords": [
+        "skills",
+        "workflow",
+        "orchestration",
+        "copilot-only"
+    ]
+}

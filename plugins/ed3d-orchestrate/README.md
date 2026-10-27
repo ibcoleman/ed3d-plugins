@@ -57,15 +57,15 @@ review-wide rather than claiming unrelated-session isolation.
 
 ## Agents and model selection
 
-The Copilot-native `*.agent.md` twins intentionally omit a `model` frontmatter key. Dispatch is pinned-first on best-effort hard-coded IDs, while the twins preserve role descriptions and bodies from their Claude Code originals and remain directly Auto-compatible.
+The Copilot-native `*.agent.md` twins intentionally omit a `model` frontmatter
+key. Every orchestrated role uses Copilot's configured subagent settings:
+dispatches omit both `model` and `reasoning_effort`, including retries. The
+workflow does not force Auto or choose a replacement model on failure.
 
-| Agent group | Role | Preferred dispatch |
-|-------------|------|--------------------|
-| `adversary` | Adversarial review | `gpt-6-astra` / `medium` |
-| `plan-reviewer`, `task-implementor-fast`, `task-bug-fixer` | Plan gates, builders, and review fixes | `gpt-5.6-luna` / `high` |
-| Research agents and `haiku-general-purpose` | Scouts | `gpt-5.6-luna` / `high` |
-
-On each delegated dispatch, the preferred model/effort is attempted first. Only a visible pre-start rejection explicitly identifying model, account availability, or effort support triggers one fallback with both overrides omitted (Auto); ambiguity and any started dispatch are never retried as model fallback. Direct agent launches remain Auto-compatible.
+This applies to scouts, plan reviewers, builders, adversaries, and fixers.
+Model, account, or effort rejection is reported as a blocker; ambiguous starts
+are not duplicated. Existing rate-limit and protocol-failure retry limits remain
+unchanged.
 
 Dispatched agents come from `ed3d-plan-and-execute`, `ed3d-research-agents`, and `ed3d-basic-agents`; install those plugins when using their roles.
 
@@ -73,11 +73,23 @@ The orchestrator is the main session — there is deliberately no orchestrator a
 
 ## Model and effort defaults
 
-Dispatch uses best-effort hard-coded model IDs and reasoning efforts: the adversary uses `gpt-6-astra` / `medium`, and every other orchestrated role uses `gpt-5.6-luna` / `high`. This is procedural pinned-first guidance, not a mechanically intercepted runtime feature. If Copilot visibly rejects the preferred model, account, or effort before any start signal, retry exactly once with both overrides omitted so Auto-only accounts continue to work; a started or ambiguous outcome is not retried as model fallback. Existing rate-limit and protocol-failure retries remain separate.
+Configure default and per-agent preferences through Copilot's `/subagents`
+command. Both orchestrated dispatches and direct agent launches inherit those
+settings rather than a repository-maintained role-to-model map. This is
+instruction-level policy, not a runtime interceptor.
 
-No agent frontmatter pins are added, so direct agent launches remain compatible with Auto-only accounts. A researcher started directly outside this orchestrated dispatch path therefore inherits the account/CLI default; configure per-agent defaults through Copilot's `/subagents` command or use an explicit native dispatch override when a direct launch must be pinned. The observed `claude-haiku-4.5` medium-effort rejection motivates the fallback; Copilot's dispatch-error semantics are otherwise unknown and require visible evidence before any fallback.
+Updating repository instructions does not change existing CLI preferences or
+an installed plugin copy.
 
-For direct adversary launches, select `ed3d-orchestrate:adversary` in `/subagents` and set `gpt-6-astra` with medium effort. Updating this repository's dispatch policy does not change an existing per-agent CLI preference or an installed plugin copy.
+## Comparing the two orchestration workflows
+
+`ed3d-orchestrate` and `ed3d-native-orchestration` are separate alternatives;
+neither replaces the other. Select one per fresh session and use separate
+sibling workspaces for comparisons, without an active review state in the
+workspace or its ancestors. When enabled, this plugin's child write guard is
+review-wide: an active PENDING review can block another workflow's subagent
+edits in the same workspace. The native candidate adds no hooks or state store.
+Installed discovery and real-world outcomes still need live verification.
 
 ## State File
 
@@ -278,5 +290,5 @@ The plan-review → builder handoff gate ships as **protocol-only** guidance. Th
 - Facet discipline (e.g. read-only planning) is enforced by instruction, not by harness. The guardrail hook narrows this gap only for the review loop.
 - The hook's stale-verdict scan requires a nonce and current reviewer lineage; it no longer scans arbitrary tail text. Legacy in-flight state without provenance remains ordinary owner enforcement, a crashed loop can leave stale active+PENDING state that write-blocks subagents until repaired, and bash-redirection writes bypass the write-guard (prose rule remains).
 - The state contract distinguishes `same-owner continuation`, `authorized ownership transfer`, and `explicit legacy recovery` through its `ownership` and `review.provenance` blocks. Unavailable completed lineage keeps the valid owner blocked with `review-reconciliation-unavailable`; one existing retry is allowed, then `reconciliation_exhausted` explicitly permits a no-verdict stop with operator choice. No verdict exists in that exhausted state.
-- Dispatch model selection is pinned-first best-effort guidance with a conservative explicit-pre-start-rejection-only Auto fallback. The adversary prefers `gpt-6-astra` / `medium`; all other orchestrated roles prefer `gpt-5.6-luna` / `high`. It is not a mechanically intercepted runtime feature; direct agent launches outside this dispatch path inherit account/CLI defaults, while unknown dispatch-error semantics and catalog drift require visible evidence. Preferred-vs-fallback provenance is transcript/report-only and does not survive `/clear` or resume; the existing state schema is not extended to persist it.
+- Dispatch instructions inherit configured subagent settings; they do not enforce model selection at runtime. Unsupported account/model/effort settings are reported without changing configuration. The existing state schema is not extended with a model-selection policy.
 - Parallel dispatch can trip provider rate limits; the skills fall back to serial/small-batch dispatch on rate-limit errors.

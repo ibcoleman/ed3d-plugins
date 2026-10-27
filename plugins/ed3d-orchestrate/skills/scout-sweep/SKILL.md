@@ -29,15 +29,21 @@ Effort levels:
 ## Step 2: Dispatch the Scouts
 
 <!-- DISPATCH-PROTOCOL:BEGIN -->
-#### Bounded pinned-first dispatch protocol
+#### Configured dispatch protocol
 
-Use preferred model `gpt-5.6-luna` and effort `high` on each scout's first attempt, expressed as `model="gpt-5.6-luna"` and `reasoning_effort="high"` overrides. Match each focus area to the best researcher agent. Invoke every named resource through Copilot's native agent/subagent delegation mechanism; do not call the Skill loader for agent names. Preserve the exact focus, questions, success criterion, return format, role, and working directory.
+Omit both `model` and `reasoning_effort` on every dispatch, including retries.
+Use Copilot's configured subagent settings for all scouts; do not force Auto
+or change the operator's configuration. Match each focus area to the best
+researcher agent. Invoke the named resource through Copilot's native agent/subagent delegation mechanism; do not call the Skill loader for agent names.
+Preserve the exact focus, questions, success criterion, return format, role,
+and working directory.
 
-If and only if an explicit pre-start rejection identifies model availability, account availability, or effort support, make exactly one Auto fallback for that scout with both `model` and `reasoning_effort` overrides omitted. Preserve every other dispatch input; a fallback rejection is terminal. Rate-limit errors retain the existing wait/retry-once and serial/small-batch behavior, do not consume the model fallback, and do not change model/effort policy. Started/no-verdict follows the existing protocol-failure path without model fallback; ambiguous/no-start outcomes are terminal and never retried.
-
-Each dispatch lineage permits at most three semantic submissions: preferred, one Auto fallback, and one separately named protocol-failure re-dispatch. never issues the fallback twice. never combines protocol retry with model fallback. Report preferred success, explicit rejection plus fallback retry, fallback result, protocol failure, or ambiguous refusal prominently, and print each full response. The shared fallback rule is one Auto fallback with both the `model` and `reasoning_effort` overrides omitted; a started/no-verdict protocol-failure re-dispatch preserves Auto selection and is not a model fallback.
-
-Site requirement: scouts use pinned-first `gpt-5.6-luna` / `high`, then one Auto fallback omitting both overrides only after explicit pre-start model/account/effort rejection; rate-limit and protocol-failure handling remain separate.
+For a provider rate-limit error, retain the existing pause, retry once, then
+serial/small-batch behavior. A started/no-verdict result follows the existing
+protocol-failure path, without adding a retry budget. For a model, account,
+or effort rejection, or an ambiguous start outcome, do not retry with a
+different model or effort; report the blocker. Never duplicate a possibly
+running scout. Report success, failure, or ambiguity and print the full response.
 
 <!-- DISPATCH-PROTOCOL:END -->
 

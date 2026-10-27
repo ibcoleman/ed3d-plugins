@@ -326,22 +326,32 @@ Every AC must be verifiable by a named test or command. Every cited file path mu
 The plan does not proceed to execution until it survives review.
 
 <!-- DISPATCH-PROTOCOL:BEGIN -->
-#### Bounded pinned-first dispatch protocol (plan-reviewer and Phase 4 builder dispatches)
+#### Configured dispatch protocol (plan-reviewer and Phase 4 builder dispatches)
 
-1. Invoke the named resource through Copilot's native agent/subagent delegation mechanism; do not call the Skill loader for agent names. Dispatch `plan-reviewer` (ed3d-orchestrate) with preferred model `gpt-5.6-luna` and effort `high`, expressed as `model="gpt-5.6-luna"` and `reasoning_effort="high"` overrides on the preferred attempt. Pass `PLAN_PATH` (absolute), `REPO_ROOT` (absolute), the exact role, prompt, and working directory. A one-time Auto fallback omits both overrides only after an explicit pre-start rejection identifying model, account availability, or effort support; preserve all other dispatch inputs. A started/no-verdict result uses the existing protocol-failure path with no model fallback, an ambiguous refusal is terminal, and rate-limit wait/retry/serialization remains separate. Report preferred success, fallback reason/retry/result, protocol failure, or ambiguity and print the full response.
+Omit both `model` and `reasoning_effort` on every dispatch, including retries.
+Use Copilot's configured subagent settings for the `plan-reviewer`,
+`task-implementor-fast`, and corrective `task-bug-fixer` dispatches. Do not
+force Auto or change the operator's configuration.
 
-The shared fallback rule is exactly one Auto fallback with both `model` and `reasoning_effort` overrides omitted; a fallback rejection is terminal. Rate-limit retries do not consume the model fallback; started/no-verdict uses protocol-failure without model fallback; ambiguity is terminal. Each lineage allows at most three semantic submissions, never issues the fallback twice, and never combines protocol retry with model fallback. Never combine protocol retry with model fallback.
+1. Invoke the named resource through Copilot's native agent/subagent delegation mechanism; do not call the Skill loader for agent names. Dispatch `plan-reviewer` (ed3d-orchestrate) with `PLAN_PATH` (absolute), `REPO_ROOT` (absolute), the exact role, prompt, and working directory. Print its full response.
 2. Parse the verdict (`VERDICT: SHIP` / `VERDICT: FIX-FIRST`, `has_critical_or_high`).
 3. On critical/high findings: fix the plan document, then re-dispatch `plan-reviewer` **once**.
 4. If critical/high findings persist after the single re-review: **stop and present them to the operator.** The operator decides whether to revise again, proceed with acknowledged risks, or abandon. Do not proceed to execution on your own authority with open critical/high plan findings.
 
-For the Phase 4 `task-implementor-fast` dispatch, use preferred model `gpt-5.6-luna` and effort `high`, expressed as `model="gpt-5.6-luna"` and `reasoning_effort="high"` overrides on the preferred attempt. Invoke the named resource through Copilot's native agent/subagent delegation mechanism; do not call the Skill loader for agent names. Preserve the exact implementation prompt, task, plan path, role, and working directory. A one-time Auto fallback omits both overrides only after an explicit pre-start rejection identifying model, account availability, or effort support.
+For the Phase 4 `task-implementor-fast` dispatch, preserve the exact
+implementation prompt, task, plan path, role, and working directory. Use the
+same native delegation mechanism and configured-settings policy. The operator
+approval checkpoint below still applies before any builder dispatch.
 
-The same bounded protocol applies to the `plan-reviewer` dispatch above: preferred `gpt-5.6-luna` / `high`, then one Auto fallback omitting both overrides only after an explicit pre-start model/account/effort rejection. A started/no-verdict result uses the existing protocol-failure path without model fallback, ambiguity is terminal without retry, and rate-limit wait/retry/serialization remains separate. Each lineage permits preferred, at most one Auto fallback, and at most one separately named protocol-failure re-dispatch; never duplicate a fallback or combine protocol retry with model fallback. Report preferred success, fallback reason/retry/result, protocol failure, or ambiguity, and print every full response.
+For a provider rate-limit error, retain the existing wait, retry once, then
+serialize/small-batch behavior. A completed started/no-verdict result uses the
+existing protocol-failure path without adding a retry budget.
 
-The shared fallback rule is exactly one Auto fallback with both `model` and `reasoning_effort` overrides omitted; a fallback rejection is terminal. Rate-limit retries do not consume the model fallback; started/no-verdict uses protocol-failure without model fallback; ambiguity is terminal. Each lineage allows at most three semantic submissions, never issues the fallback twice, and never combines protocol retry with model fallback.
+For a model, account, or effort rejection, or an ambiguous start outcome,
+do not retry with different settings; report the blocker.
 
-Site requirement: the Phase 4 `task-implementor-fast` dispatch is pinned-first with `gpt-5.6-luna` / `high`, then one Auto fallback omitting both overrides only after an explicit pre-start model/account/effort rejection, preserving the exact implementation prompt, task, plan path, role, and working directory. Rate-limit and protocol-failure handling remain separate.
+Never duplicate a possibly running agent. Report success, failure, or
+ambiguity and print every full response.
 
 <!-- DISPATCH-PROTOCOL:END -->
 

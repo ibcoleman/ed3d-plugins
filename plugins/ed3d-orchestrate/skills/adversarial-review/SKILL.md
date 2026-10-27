@@ -177,19 +177,26 @@ those writes remain procedural.
 ### 1. Dispatch the Adversary
 
 <!-- DISPATCH-PROTOCOL:BEGIN -->
-#### Bounded pinned-first dispatch protocol
+#### Configured dispatch protocol
 
-The `adversary` dispatch uses preferred model `gpt-6-astra` and effort `medium` on its first attempt, expressed as `model="gpt-6-astra"` and `reasoning_effort="medium"` overrides. Invoke the named resource through Copilot's native agent/subagent delegation mechanism; do not call the Skill loader for agent names. Preserve the exact review prompt, plan path, `BASE_SHA`, `HEAD_SHA`, `NONCE`, prior issues, role, and working directory.
+Omit both `model` and `reasoning_effort` on every dispatch, including retries.
+Use Copilot's configured subagent settings for the `adversary` dispatch and
+the `task-bug-fixer`; do not force Auto or change the operator's configuration.
+Invoke the named resource through Copilot's native agent/subagent delegation mechanism; do not call the Skill loader for agent names.
+Preserve the exact review prompt, plan path, `BASE_SHA`, `HEAD_SHA`, `NONCE`,
+prior issues, role, and working directory.
 
-A fallback is permitted exactly once, and only when an explicit pre-start rejection identifies model availability, account availability, or effort support. Fallback rule: make exactly one Auto fallback with both `model` and `reasoning_effort` overrides omitted; preserve every other dispatch input. A fallback rejection is terminal.
+For a provider rate-limit error, retain the existing wait, retry once, then
+serialize/small-batch behavior. A completed started/no-verdict dispatch follows
+the existing protocol-failure path and its one re-dispatch, with the same
+state/nonce and recovery requirements. Do not retry an ambiguous start outcome
+or duplicate a possibly running agent. Model, account, or effort rejection is
+a blocker to report, not permission to override configuration or add retries.
 
-Classify a rate-limit error separately: use the existing wait, retry-once, then serialize/small-batch behavior; it does not consume the model fallback or change the selected model/effort policy. A started/no-verdict dispatch follows the existing protocol-failure path and may take at most its existing one protocol re-dispatch, preserving the current selection mode; never switch to the fallback after a start signal; protocol-failure proceeds without model fallback. An ambiguous refusal or no-start outcome is terminal and must not be retried.
-
-The dispatch lineage allows at most three semantic submissions: preferred, the sole Auto fallback, and one separately named protocol-failure re-dispatch. never issues the fallback twice, never combines protocol retry with model fallback, or duplicates an ambiguous outcome. Report preferred success, explicit rejection plus fallback retry, fallback result, protocol failure, or ambiguous refusal prominently, and print the full response after every attempt before taking the next action.
-
-Site requirement: the primary `adversary` dispatch is pinned-first with `gpt-6-astra` / `medium`, then one Auto fallback omitting both overrides only after explicit pre-start model/account/effort rejection, preserving the exact review prompt, plan path, SHAs, nonce, prior issues, role, and working directory. Rate-limit and protocol-failure handling remain separate.
-
-For the FIX-FIRST branch, dispatch `task-bug-fixer` with preferred model `gpt-5.6-luna` and effort `high`, expressed as `model="gpt-5.6-luna"` and `reasoning_effort="high"` overrides. Its one Auto fallback omits both overrides only after the same explicit pre-start rejection, preserving the exact fixer prompt, findings, role, path, and working directory. Rate-limit and protocol-failure handling remain separate.
+For the FIX-FIRST branch, dispatch `task-bug-fixer` with the exact fixer prompt,
+findings, role, path, and working directory under the same configured-settings
+policy. Report success, failure, or ambiguity and print the full response after
+the required verdict state write; the ordering below is unchanged.
 
 <!-- DISPATCH-PROTOCOL:END -->
 
@@ -247,7 +254,7 @@ operator choice to re-arm or abandon.
 **`VERDICT: FIX-FIRST` with critical/high open:**
 
 - If `round < max_rounds`:
-  1. Invoke the named resource through Copilot's native agent/subagent delegation mechanism; do not call the Skill loader for agent names. Dispatch `task-bug-fixer` (ed3d-plan-and-execute) according to the bounded pinned-first protocol above, preserving the open critical/high findings verbatim. **Print its full response.**
+  1. Invoke the named resource through Copilot's native agent/subagent delegation mechanism; do not call the Skill loader for agent names. Dispatch `task-bug-fixer` (ed3d-plan-and-execute) according to the configured dispatch protocol above, preserving the open critical/high findings verbatim. **Print its full response.**
   2. Verify the fixes are committed and the working tree is clean, then refresh `head_sha` in the state file to the new full 40-character `git rev-parse HEAD`. Every round reviews `BASE_SHA..HEAD` including all fix commits — a stale `head_sha` makes the next round review the pre-fix diff and re-report everything.
   3. Set `round` to `round + 1` and `verdict` to `"PENDING"` in the same state-file write — PENDING marks the adversary back in flight and re-arms the write-guard for the re-review.
   4. Re-dispatch the adversary with the refreshed `HEAD_SHA` and `PRIOR_ISSUES` set to the previous round's open findings.
