@@ -164,7 +164,15 @@ null` until dispatch, then the current `round`,
 `dispatch_tool_call_id`, and `reviewer_agent_id`. These are evidence bindings,
 not authentication claims.
 
-The command distinguishes exactly three resume paths:
+The command distinguishes exactly three resume paths. For every fresh-task
+claim, same-owner continuation, ownership transfer, or legacy recovery, obtain
+the live parent identity from `COPILOT_AGENT_SESSION_ID` in the current
+shell/task environment. It must be present, non-empty, and treated as an
+opaque value: bind and persist that exact value as `ownership.session_id`
+without trimming, parsing, or substituting another identity. Do not infer it
+from transcript text, persisted state, tool-call IDs, or child-agent IDs. The
+hook's event identity fields remain `sessionId` and `session_id` and are
+unchanged.
 
 | Path | Entry and state action |
 |---|---|

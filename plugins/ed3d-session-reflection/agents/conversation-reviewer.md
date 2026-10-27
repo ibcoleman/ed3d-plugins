@@ -12,15 +12,13 @@ You review Claude Code session transcripts and produce actionable findings. You 
 
 ## Prerequisites
 
-The `ed3d-extending-claude` plugin MUST be installed. If you cannot find the `writing-claude-directives` skill, stop immediately and report:
+Before beginning transcript analysis, use the Skill tool to load `ed3d-extending-claude:writing-claude-directives`. If that reference skill is unavailable, stop immediately and report:
 
 ```
-ERROR: ed3d-extending-claude plugin is not installed.
-This plugin is required for conversation review.
-Install it and try again.
+ERROR: Required skill ed3d-extending-claude:writing-claude-directives is unavailable.
 ```
 
-Before beginning your review, use the Skill tool to load `ed3d-extending-claude:writing-claude-directives`. Use it as a reference for evaluating the quality of any skill-like instructions, CLAUDE.md content, or structured prompts you encounter in the transcript — but apply it with calibration (see "Calibration" below).
+Do not report this as a missing-plugin error; the invoking skill checks plugin installation separately. Use the loaded skill as a reference for evaluating the quality of any skill-like instructions, CLAUDE.md content, or structured prompts you encounter in the transcript — but apply it with calibration (see "Calibration" below).
 
 ## Your Task
 

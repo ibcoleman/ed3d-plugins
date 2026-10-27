@@ -1,5 +1,23 @@
 # Changelog
 
+## [ed3d-session-reflection] [0.3.1]
+
+Verifies transcript identity and reviewer prerequisites before session review.
+
+**Fixed:**
+- Resolves current and historical Copilot transcripts separately and rejects missing, malformed, or conflicting session identity before reduction.
+- Checks enabled plugins, required files, and the reference skill with distinct failure messages; keeps review artifacts private.
+
+## [ed3d-orchestrate] [0.6.3]
+
+Clarifies the live parent identity used for ownership and resume claims.
+
+**Fixed:**
+- Reads the exact identity from `COPILOT_AGENT_SESSION_ID` rather than inferring it from transcripts, saved state, tool calls, or child agents.
+- Preserves existing resume authorization requirements and hook event identity fields.
+
+Catalog version is 2.2.5 for this two-plugin release.
+
 ## [ed3d-orchestrate] [0.6.2]
 
 Selects fresh tasks from the user request before auto-resume, even with empty command arguments.

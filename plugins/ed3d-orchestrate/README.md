@@ -37,9 +37,15 @@ This plugin is written for Copilot CLI's native delegation. Its skills use Copil
 The persisted contract includes `"ownership"` with `unowned`, `owned`,
 `transfer_pending`, and `recovery_required` statuses, plus a `"provenance"`
 object carrying the current `round`, `dispatch_tool_call_id`, and
-`reviewer_agent_id` for the current round. A fresh loop binds the live parent
-session as `owned` before work; if that identity is unavailable it remains
-unbound and surfaces `ownership-recovery-required`. It distinguishes same-owner
+`reviewer_agent_id` for the current round. For fresh ownership and every
+resume claim, read the live parent identity from `COPILOT_AGENT_SESSION_ID`
+in the current shell/task environment. Require a present, non-empty opaque
+value and persist it exactly as `ownership.session_id`; do not normalize it or
+infer it from transcript text, persisted state, tool-call IDs, or child-agent
+IDs. A fresh loop binds the live parent session as `owned` before work; if
+that identity is unavailable it remains unbound and surfaces
+`ownership-recovery-required`. The hook continues to read event `sessionId` or
+`session_id` unchanged. It distinguishes same-owner
 continuation, authorized ownership transfer, and explicit legacy recovery. Missing identity uses
 `ownership-recovery-required` without mutation. A bound but unavailable
 completed result remains owner-blocked with

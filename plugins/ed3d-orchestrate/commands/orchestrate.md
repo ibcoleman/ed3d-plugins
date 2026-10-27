@@ -102,7 +102,13 @@ before dispatch, then the current round's `dispatch_tool_call_id` and
 not an implicit owner claim. The stop hook reads both `sessionId` and
 `session_id`.
 
-`orchestrate resume` distinguishes these paths:
+`orchestrate resume` distinguishes these paths. For a fresh task or any
+resume path, obtain the live parent identity from `COPILOT_AGENT_SESSION_ID`
+in the current shell/task environment. Require a present, non-empty opaque
+value and persist that exact value as `ownership.session_id`; do not trim,
+parse, or replace it. Never infer identity from transcript text, persisted
+state, tool-call IDs, or child-agent IDs. The hook's `sessionId` and
+`session_id` event-field behavior is unchanged.
 
 | Path | Required evidence and result |
 |---|---|
@@ -125,7 +131,8 @@ exists; then re-read the
 state file before dispatching or enabling review. If the session identity is unavailable,
 leave the state unowned (or mark malformed legacy state
 `recovery_required`), do not dispatch, do not claim ownership, and surface
-`ownership-recovery-required`; never invent an identity from transcript text.
+`ownership-recovery-required`. Never infer identity from transcript text,
+persisted state, tool-call IDs, or child-agent IDs.
 
 For a **new review round** (initial arm or a FIX-FIRST advance), set the
 current round and `review.verdict` to `PENDING`, clear `review.provenance`, and

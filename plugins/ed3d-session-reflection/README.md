@@ -1,30 +1,30 @@
 # ed3d-session-reflection
 
-**EXPERIMENTAL.** Session awareness and conversation review tooling for Claude Code.
+**EXPERIMENTAL.** Session awareness and conversation review tooling for GitHub Copilot CLI, with legacy Claude Code transcript support.
 
 ## What It Does
 
-This plugin gives Claude Code self-awareness of its own session and provides tools to review how sessions went — analyzing human prompting effectiveness, agent performance, and environment/tooling gaps.
+This plugin locates session transcripts and provides tools to review how sessions went — analyzing human prompting effectiveness, agent performance, and environment/tooling gaps.
 
 ### Session Awareness
 
-A `SessionStart` hook injects the current session ID and transcript path into Claude's context. This means Claude knows where its own conversation lives on disk, enabling review and export workflows.
+For a current-session review, the skill requires the live `COPILOT_AGENT_SESSION_ID` and checks its identity against the transcript metadata. It uses a runtime-supplied current transcript path when present, otherwise exactly `~/.copilot/session-state/<COPILOT_AGENT_SESSION_ID>/events.jsonl`; it does not scan or choose by recency. An explicit transcript path is historical: it is checked against its canonical session-state directory ID or a required `--session-id`, never against the current session ID. The inline checker reads metadata only and rejects absent, malformed, or conflicting identity.
 
 ### Conversation Review
 
 Two skills for reviewing sessions:
 
-- **`/review-session`** — Deep qualitative review of the current session (or a specified transcript). Dispatches an Opus agent that reads the reduced transcript and writes structured findings covering what went well, what went wrong, and actionable recommendations.
+- **`/ed3d-session-reflection:review-session`** — Deep qualitative review of the current session (or a specified transcript). Dispatches the conversation reviewer using configured agent preferences. The reviewer reads a private reduced snapshot and writes findings covering what went well, what went wrong, and actionable recommendations.
 
 - **`/review-recent-sessions`** — Reviews the last N sessions (default 5) in the current project. Dispatches parallel Opus reviewers (one per session), then synthesizes cross-session patterns with a Sonnet agent. Identifies recurring issues and highest-impact recommendations.
 
 ### Transcript Reduction
 
-A preprocessing script (`reduce-transcript.py`) strips Claude Code JSONL transcripts down to a token-efficient text format, removing metadata noise (UUIDs, permission modes, git branches) while preserving the conversation flow, tool calls, and results. Typical reduction: 78-99% depending on session composition.
+A preprocessing script (`reduce-transcript.py`) accepts Copilot CLI `events.jsonl` and legacy Claude Code JSONL transcripts. It removes metadata noise while preserving conversation flow, tool calls, and results. Reduction is not redaction; review artifacts stay local in a fresh private directory and are not publication-ready.
 
 ## Requirements
 
-- **`ed3d-extending-claude`** must be installed. The conversation reviewer agent loads the `writing-claude-directives` skill as a reference for evaluating prompt quality.
+- Before reduction, `copilot plugin list` must confirm `ed3d-session-reflection` and `ed3d-extending-claude` are installed and enabled. The invoking skill loads `ed3d-extending-claude:writing-claude-directives` through the native Skill tool and verifies the reviewer agent and reducer are readable; the reviewer loads that reference skill separately before analysis. Each missing prerequisite stops review with a specific error.
 
 ## Installation
 
@@ -45,8 +45,8 @@ A preprocessing script (`reduce-transcript.py`) strips Claude Code JSONL transcr
 ## How It Works
 
 ```
-SessionStart hook
-    │ injects session ID + transcript path
+Explicit path / runtime transcript path / current-session canonical path
+    │ resolves and verifies one transcript identity
     ▼
 /review-session (or /review-recent-sessions)
     │
@@ -56,6 +56,10 @@ SessionStart hook
     │
     └── (multi-session only) synthesis agent  →  cross-session patterns
 ```
+
+These discovery rules apply to `review-session`; the separate
+`review-recent-sessions` workflow retains its own discovery instructions.
+Editing this repository does not update an installed plugin copy or deploy hooks.
 
 ## Review Axes
 
