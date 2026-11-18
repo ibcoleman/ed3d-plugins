@@ -25,8 +25,8 @@ This plugin is written for Copilot CLI's native delegation. Its skills use Copil
      │            each; independents parallel, dependents sequenced
      ▼
  5. TUMBLE DRYER  adversarial-review loop: adversary -> verdict ->
-     │            fix critical/high -> re-review (max rounds, then
-     │            operator circuit-breaker). agentStop hook blocks
+     │            fix critical/high -> re-review (2 rounds, then
+     │            draft-PR handoff to the operator). agentStop hook blocks
      │            premature stops while the loop is active.
      ▼
  6. REPORT ────── per-phase summary, review history, final verdict
@@ -102,6 +102,8 @@ The loop maintains `.ed3d/orchestrate-state.json` in the working repository. It 
   "base_sha": "3f2a1b9",
   "head_sha": "b7ddd28",
   "phase": "review",
+  "status": "running",
+  "blocked_question": null,
   "gate": {
     "approval": "pending"
   },
@@ -113,10 +115,13 @@ The loop maintains `.ed3d/orchestrate-state.json` in the working repository. It 
   "review": {
     "active": true,
     "round": 2,
-    "max_rounds": 3,
+    "max_rounds": 2,
     "verdict": "FIX-FIRST",
     "open_critical_high": [
       "high: src/cli.py:42 - panics on empty input"
+    ],
+    "resolved_findings": [
+      "high: src/cli.py:17 - ignores --upper flag"
     ],
     "consecutive_blocks": 1,
     "history": [
@@ -130,8 +135,10 @@ The loop maintains `.ed3d/orchestrate-state.json` in the working repository. It 
 - `phase`: `research` | `plan` | `execute` | `review`
 - `base_sha` / `head_sha`: the commit range under review — recorded before builders run and after they commit; adversarial review refuses to start without both valid
 - `review.verdict`: `PENDING` | `SHIP` | `FIX-FIRST`; final states are `SHIP` (including operator-accepted) or `review.active: false`
-- `review.round` goes to `max_rounds + 1` when the circuit-breaker trips — that is the signal the hook uses to allow the stop
-- `review.history`: append-only per-round verdict record; survives `/clear`+resume; ignored by the hook
+- `status` / `blocked_question`: `status` is `running` or `blocked_awaiting_operator`; when blocked, `blocked_question` holds the single operator question and the hook allows the stop on the first try without changing state. The operator's next message resets it to `running` / `null`
+- `review.round` goes to `max_rounds + 1` when the circuit-breaker trips; the hook also treats a cap round that finished FIX-FIRST in `history` as reaching the cap
+- `review.history`: append-only per-round verdict record; survives `/clear`+resume; the hook reads the round as the highest of `review.round` and every history round, so the counter never moves backwards
+- `review.resolved_findings`: append-only critical/high one-liners the adversary confirmed fixed; never reopened, and the hook omits them from its open-findings reminder
 - `review.nonce`: per-loop verdict tag (8 lowercase hex), generated when a review arms — including re-arms for a new loop — and survives `/clear`+resume; the guardrail matches rendered verdicts by it
 - `handoff.status`: `not_started` | `pending` | `verified` | `blocked`; a first missing outcome permits one fixer correction attempt, a successful correction is persisted as `verified`, and a second incomplete handoff remains blocked before review
 - `consecutive_blocks` counts blocks-since-last-progress: the hook increments it, the orchestrating skills reset it to 0 on every round/verdict transition; a terminal SHIP state with `consecutive_blocks != 0` is inconsistent and the hook will block the stop until it is repaired
@@ -145,7 +152,7 @@ The loop maintains `.ed3d/orchestrate-state.json` in the working repository. It 
 | medium | No — fix as appropriate; report what's left |
 | low | No — advisory only |
 
-`ed3d-plan-and-execute` requires **zero issues including Minor** before proceeding. This plugin deliberately diverges: only critical/high block, medium/low are advisory, the loop caps at `max_rounds` (default 3), and anything unresolved at the cap goes to the operator as an explicit accept/raise/hand-off decision. The rationale: infinite fix loops on advisory findings burn rounds without reducing risk.
+`ed3d-plan-and-execute` requires **zero issues including Minor** before proceeding. This plugin deliberately diverges: only critical/high block, medium/low are advisory, the loop caps at `max_rounds` (default 2), and anything unresolved at the cap becomes a draft-PR handoff listing the open findings plus a `blocked_awaiting_operator` accept/raise/take-over question. The rationale: infinite fix loops on advisory findings burn rounds without reducing risk.
 
 ## The Guardrail Hook
 

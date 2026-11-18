@@ -1,6 +1,6 @@
 ---
 name: "adversarial-review"
-description: "The tumble dryer loop. Dispatches the adversary agent against a commit range, parses its verdict, and cycles fix -> re-review until no critical/high findings remain or max rounds (default 3) is hit, then circuit-breaks to the operator. Updates .ed3d/orchestrate-state.json at every round transition."
+description: "The tumble dryer loop. Dispatches the adversary agent against a commit range, parses its verdict, and cycles fix -> re-review until no critical/high findings remain or max rounds (default 2) is hit, then hands off a draft PR listing open findings and stops as blocked_awaiting_operator. Updates .ed3d/orchestrate-state.json at every round transition."
 user-invocable: false
 ---
 
@@ -20,9 +20,10 @@ Drive adversarial review rounds over completed implementation work. This skill i
 "review": {
   "active": true,
   "round": 1,
-  "max_rounds": 3,
+  "max_rounds": 2,
   "verdict": "PENDING",
   "open_critical_high": [],
+  "resolved_findings": [],
   "consecutive_blocks": 0,
   "history": [],
   "nonce": "a1b2c3d4",
@@ -128,7 +129,7 @@ complete exhausted no-verdict state (`reconciliation_exhausted`,
 diagnostic marker), report that no verdict exists, and require an explicit
 operator choice to re-arm or abandon. This path must never SHIP.
 
-`max_rounds` defaults to 3; the operator can change it in the state file at any time.
+`max_rounds` defaults to 2 (the hook uses the same default when the field is absent); the operator can change it in the state file at any time. The guardrail hook reads the round as the highest of `review.round` and every `review.history[].round`, so the round counter never moves backwards.
 
 `review.history` is the append-only round record (create the array if the state file predates it — in-flight 0.2.x state files do):
 
@@ -224,7 +225,7 @@ From the response, extract:
 Then **immediately, in the same assistant turn**, rewrite `.ed3d/orchestrate-state.json`. Use this checklist and do not skip the re-read:
 
 1. Set `verdict` to the parsed verdict.
-2. Set `open_critical_high` to the list of open critical/high finding one-liners.
+2. Set `open_critical_high` to the list of open critical/high finding one-liners. Append every prior finding the adversary confirmed fixed with evidence to `review.resolved_findings` (create it if absent); never remove entries from it and never put a resolved finding back on the open list.
 3. Set `consecutive_blocks: 0` — the guardrail hook increments that counter each time it blocks a stop, and every verdict you commit here is progress, which resets it.
 4. Append `review.history` for this round (`{"round": N, "verdict": ..., "critical_high": C, "advisory": A}`); create the array first if the state file predates it.
 5. Re-read `.ed3d/orchestrate-state.json` and verify the written `verdict`, `open_critical_high`, `consecutive_blocks: 0`, and new `history` entry before doing anything else.
@@ -258,13 +259,14 @@ operator choice to re-arm or abandon.
   2. Verify the fixes are committed and the working tree is clean, then refresh `head_sha` in the state file to the new full 40-character `git rev-parse HEAD`. Every round reviews `BASE_SHA..HEAD` including all fix commits — a stale `head_sha` makes the next round review the pre-fix diff and re-report everything.
   3. Set `round` to `round + 1` and `verdict` to `"PENDING"` in the same state-file write — PENDING marks the adversary back in flight and re-arms the write-guard for the re-review.
   4. Re-dispatch the adversary with the refreshed `HEAD_SHA` and `PRIOR_ISSUES` set to the previous round's open findings.
-  5. **Silence is not fixed.** In the new review, any prior issue the adversary does not explicitly confirm fixed with evidence stays on the open list. Carry it forward.
+  5. **Silence is not fixed.** In the new review, any prior issue the adversary does not explicitly confirm fixed with evidence stays on the open list. Carry it forward. Issues confirmed fixed move to `resolved_findings` and stay resolved.
   6. Go to step 2.
 
-- If `round >= max_rounds`: **circuit-break.**
-  1. Set `round` to `max_rounds + 1` in the state file (this tells the guardrail hook the cap is reached — it will allow the session to stop and prompt you to surface the decision).
-  2. Stop fixing. Present the open critical/high findings to the operator with the round history and ask how to proceed: accept the findings as-is, raise `max_rounds`, or hand off.
-  3. When the operator decides: on accept-or-resolved, set `review.active: false`, `verdict: "SHIP"` (operator-accepted), and `consecutive_blocks: 0` before finishing.
+- If `round >= max_rounds`: **circuit-break with a draft-PR handoff.**
+  1. Stop fixing. If the operator has authorized pushing a branch/bookmark and opening a draft PR for this work, open or update a **draft** PR whose body lists every open critical/high finding verbatim, the round history, and what remains unverified. Never mark it ready, merge, or deploy. Without that authority, put the same list in the final report instead.
+  2. In one state write: set `round` to `max_rounds + 1`, top-level `status: "blocked_awaiting_operator"`, and `blocked_question` to one question such as `"Round cap reached: accept the draft handoff with N open critical/high findings, raise max_rounds, or take over?"`. Re-read and verify it. The guardrail hook allows the stop on the first try.
+  3. Ask that question with the draft PR link (or the findings list) and end the turn.
+  4. When the operator decides, set `status: "running"` and `blocked_question: null`; on accept, also set `review.active: false`, `verdict: "SHIP"` (operator-accepted), and `consecutive_blocks: 0` before finishing.
 
 **`VERDICT: FIX-FIRST` with an empty critical/high list** (a contract violation by the adversary — FIX-FIRST is defined to mean open critical/high):
 - Trust the findings list over the verdict marker. Treat the review as advisory-only (medium/low): fix as appropriate (often worth one quick pass), then set `review.active: false`, `verdict: "SHIP"`, and `consecutive_blocks: 0`, and list what was left unfixed in the final report. Note the protocol deviation in the report.
@@ -298,4 +300,4 @@ inactive/PENDING no-verdict state. Never write or report SHIP for exhaustion.
 | medium | No | Fix as appropriate; report what's left |
 | low | No | Advisory only |
 
-Max rounds: 3 by default (`review.max_rounds` in the state file), then operator circuit-breaker.
+Max rounds: 2 by default (`review.max_rounds` in the state file), then a draft-PR handoff that lists open findings and a `blocked_awaiting_operator` stop.

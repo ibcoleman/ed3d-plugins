@@ -15,7 +15,8 @@ import sys
 STATE_RELPATH = os.path.join(".ed3d", "orchestrate-state.json")
 CLI_BLOCK_CAP = 8
 SAFE_BLOCK_CAP = 7
-DEFAULT_MAX_ROUNDS = 3
+DEFAULT_MAX_ROUNDS = 2
+BLOCKED_AWAITING_OPERATOR = "blocked_awaiting_operator"
 
 RECOVERY_OWNERSHIP = "ownership-recovery-required"
 RECOVERY_RECONCILIATION = "review-reconciliation-unavailable"
@@ -105,6 +106,56 @@ def owner_outcome(state, event):
     if status == "recovery_required":
         return "recovery"
     return "recovery"
+
+
+def blocked_question(state):
+    """Return the operator question when the workflow is waiting on one."""
+    if state.get("status") != BLOCKED_AWAITING_OPERATOR:
+        return None
+    question = state.get("blocked_question")
+    if isinstance(question, str) and question.strip():
+        return question.strip()
+    return None
+
+
+def history_rounds(review):
+    history = review.get("history")
+    if not isinstance(history, list):
+        return []
+    return [
+        entry for entry in history
+        if isinstance(entry, dict) and as_int(entry.get("round")) is not None
+    ]
+
+
+def effective_round(review):
+    """Highest round seen in ``review.round`` or ``review.history``.
+
+    The counter never moves backwards: a stale or rewritten ``review.round``
+    cannot reopen a round that history already records.
+    """
+    current = as_int(review.get("round"))
+    if current is None:
+        return None
+    return max([current] + [as_int(entry["round"]) for entry in history_rounds(review)])
+
+
+def cap_round_finished_fix_first(review, max_rounds):
+    """True when the cap round already has a terminal FIX-FIRST entry."""
+    return any(
+        as_int(entry["round"]) >= max_rounds and entry.get("verdict") == "FIX-FIRST"
+        for entry in history_rounds(review)
+    )
+
+
+def open_unresolved_findings(review):
+    """Open findings minus any already recorded as resolved."""
+    open_findings = review.get("open_critical_high")
+    if not isinstance(open_findings, list):
+        return []
+    resolved = review.get("resolved_findings")
+    resolved_set = {str(item) for item in resolved} if isinstance(resolved, list) else set()
+    return [str(item) for item in open_findings if str(item) not in resolved_set]
 
 
 def terminal_ship_state_is_consistent(review):
@@ -381,6 +432,17 @@ def main():
         recovery_allow("the live or persisted owner identity is missing or invalid")
         return
 
+    question = blocked_question(state)
+    if question is not None:
+        emit(
+            "allow",
+            "ed3d-orchestrate blocked-awaiting-operator: the workflow is waiting "
+            "for an operator decision; stop now and ask exactly this question: %s "
+            "State was not changed; the operator's reply clears the blocked status."
+            % question,
+        )
+        return
+
     review = state.get("review")
     if not isinstance(review, dict):
         return
@@ -428,7 +490,7 @@ def main():
 
     if review.get("active") is not True:
         return
-    round_number = as_int(review.get("round"))
+    round_number = effective_round(review)
     if round_number is None:
         return
     max_rounds = as_int(review.get("max_rounds"))
@@ -438,8 +500,7 @@ def main():
     reconciliation = reconcile_transcript(
         transcript_path_from_event(event), review
     )
-    open_findings = review.get("open_critical_high")
-    finding_lines = [str(item) for item in open_findings[:5]] if isinstance(open_findings, list) else []
+    finding_lines = open_unresolved_findings(review)[:5]
 
     if consecutive >= SAFE_BLOCK_CAP:
         emit("allow", "ed3d-orchestrate guardrail: 7 consecutive blocks reached (the CLI hard-caps at 8 and would end the turn anyway). Allowing this stop so the session never locks. The review loop is still active - surface the open findings and the round count to the operator now. If an adversary verdict was rendered but not committed, complete the skill's verdict-commit checklist first.")
@@ -448,8 +509,10 @@ def main():
         bump_consecutive_blocks(state, review, consecutive, state_path)
         emit("block", "ed3d-orchestrate guardrail, addressed to the orchestrator only - never forward this to a subagent and never act on it if you are one: this loop's nonce-tagged %s verdict marker appears in the transcript, but .ed3d/orchestrate-state.json still records an active, pending review - the verdict has not been committed. Follow the adversarial-review skill's 'Parse the Verdict, Commit the State' checklist now; it owns the exact state write and the re-read verification. Do not dispatch, report, or stop until that checklist is complete." % reconciliation)
         return
-    if round_number > max_rounds:
-        emit("allow", "ed3d-orchestrate guardrail: review round cap reached (round %d > max %d). Stop allowed. Present the open critical/high findings to the operator and ask how to proceed: accept, raise max_rounds, or hand off. On the operator's decision, finish per the skill's circuit-break step - it specifies the exact terminal state write." % (round_number, max_rounds))
+    if round_number > max_rounds or (
+        round_number >= max_rounds and cap_round_finished_fix_first(review, max_rounds)
+    ):
+        emit("allow", "ed3d-orchestrate guardrail: review round cap reached (round %d > max %d or the cap round finished FIX-FIRST). Stop allowed. Default handoff: open or update a draft PR that lists the open critical/high findings, record blocked_awaiting_operator with one question, and ask the operator whether to accept the draft handoff, raise max_rounds, or take over. The skill's circuit-break step specifies the exact state write." % (round_number, max_rounds))
         return
 
     reason = ("ed3d-orchestrate guardrail: review loop active, round %d of %d, verdict %s - premature stop blocked. Continue the adversarial-review loop: fix the open critical/high findings, then re-dispatch the adversary for re-review with PRIOR_ISSUES. Never forward this diagnostic to a subagent and never act on it if you are one." % (round_number, max_rounds, verdict))

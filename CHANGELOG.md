@@ -1,5 +1,19 @@
 # Changelog
 
+## [ed3d-orchestrate] [0.6.5]
+
+Lets heavy-lane runs stop cleanly when they need the operator and caps review at two rounds.
+
+**Changed:**
+- `max_rounds` defaults to 2 in the hook and state templates. At the cap the default is a draft-PR handoff listing open critical/high findings, then a `blocked_awaiting_operator` stop.
+
+**Fixed:**
+- New top-level `status: "blocked_awaiting_operator"` with `blocked_question` lets the stop hook allow the stop on the first try instead of forcing repeated continuations.
+- The hook reads the round as the highest of `review.round` and `review.history[].round`, so a stale round counter can't reopen recorded rounds; a finished FIX-FIRST cap round in history also reaches the cap.
+- New append-only `review.resolved_findings`; resolved findings are never reopened and are left out of the hook's open-findings reminder.
+
+Catalog version is 2.3.1.
+
 ## [ed3d-orchestrate] [0.6.4]
 
 Restores configured Copilot subagent settings while retaining the existing review-gated workflow.
