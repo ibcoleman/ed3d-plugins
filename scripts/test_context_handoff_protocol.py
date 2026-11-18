@@ -284,6 +284,8 @@ def _assert_canonical_defaults(state: dict) -> None:
     assert state["base_sha"] is None
     assert state["head_sha"] is None
     assert state["phase"] == "research"
+    assert state["status"] == "running"
+    assert state["blocked_question"] is None
     assert state["gate"] == {"approval": "pending"}
     assert state["handoff"] == {
         "status": "not_started",
@@ -298,9 +300,10 @@ def _assert_canonical_defaults(state: dict) -> None:
     assert state["review"] == {
         "active": False,
         "round": 0,
-        "max_rounds": 3,
+        "max_rounds": 2,
         "verdict": "PENDING",
         "open_critical_high": [],
+        "resolved_findings": [],
         "consecutive_blocks": 0,
         "history": [],
         "nonce": None,

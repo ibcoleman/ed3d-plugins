@@ -29,6 +29,8 @@ Resume preserves the current state instead:
   "base_sha": null,
   "head_sha": null,
   "phase": "research",
+  "status": "running",
+  "blocked_question": null,
   "gate": {
     "approval": "pending"
   },
@@ -45,9 +47,10 @@ Resume preserves the current state instead:
   "review": {
     "active": false,
     "round": 0,
-    "max_rounds": 3,
+    "max_rounds": 2,
     "verdict": "PENDING",
     "open_critical_high": [],
+    "resolved_findings": [],
     "consecutive_blocks": 0,
     "history": [],
     "nonce": null,
@@ -151,6 +154,8 @@ The review block's `history` field is the append-only round record:
 - **A verdict that is not in the state file does not exist.** No stop, no operator report, no dispatch may occur between parsing a verdict and committing it to the state file — one turn, both actions. The guardrail reads the file, not your intentions.
 - **The loop nonce.** Whenever a review arms — including re-arming an existing inactive review block for a new loop — generate a fresh nonce: 8 lowercase hex characters, written as `review.nonce` (overwrite any prior value; never carry a nonce across loops). It persists for the whole loop, across every round and `/clear`+resume, and travels in every adversary dispatch as `NONCE: <value>`. The guardrail hook matches rendered verdicts by this tag, which is what keeps the literal `VERDICT: SHIP` strings in skill and agent prose from being mistaken for a real verdict.
 - **`verdict: "PENDING"` means an adversary dispatch is in flight — at every round.** Round 1 starts PENDING; after every FIX-FIRST round, once the fixer's commits are verified and `head_sha` is refreshed, re-arm in one state write: `round: round + 1` and `verdict: "PENDING"` together, before re-dispatching the adversary. While verdict is PENDING, the write-guard hook mechanically blocks write-class tool calls from subagents — that is the enforcement layer behind the adversary's no-writes rule, so treat any adversary claim of having fixed the state file or the working tree as suspect and verify against git.
+- **Waiting on the operator stops cleanly.** When the workflow reaches a decision only the operator can make (the round-cap handoff, an approval checkpoint, a blocker that needs new authority), write top-level `status: "blocked_awaiting_operator"` and `blocked_question` (one plain-language question) in one state write, re-read it, ask that question, and end the turn. The guardrail hook then allows the stop on the first try without changing state. When the operator's next message is processed, set `status: "running"` and `blocked_question: null` before any other transition. Use this only for a genuine operator decision, never to escape unfinished fixes.
+- **Rounds only move forward; resolved findings stay resolved.** The guardrail hook reads the round as the highest of `review.round` and every `review.history[].round`, so rewriting `review.round` lower never reopens a recorded round. `review.resolved_findings` lists the critical/high one-liners the adversary confirmed fixed with evidence; append to it, never remove from it, never list a resolved finding in `PRIOR_ISSUES` again, and the hook drops resolved items from its open-findings reminder.
 - On completion (SHIP or operator-accepted), set `review.active: false`, reset `consecutive_blocks: 0`, and leave the final `verdict` in place. The state file is the audit trail — the operator can reconstruct every transition from it after the fact.
 
 ### Ownership and review-lineage contract
@@ -269,7 +274,7 @@ Before each control-plane transition, verify the state file and the
 corresponding artifact rather than inferring progress from the transcript:
 
 - **fresh task:** canonical fresh state, including pending approval, a
-  `not_started` handoff, zero correction attempts, `max_rounds: 3`, empty
+  `not_started` handoff, zero correction attempts, `max_rounds: 2`, empty
   history, and a null nonce;
 - **plan binding:** absolute existing `plan_path`, `phase: "execute"`, a valid
   baseline, and pending approval (or a matching `reset_pending` handoff while
@@ -492,7 +497,7 @@ Final report to the operator:
 | "I'll summarize the builder's response for the user" | No. Print the full response. Always. |
 | "The adversary didn't mention the prior issue, so it's fixed" | No. Silence is not confirmation. Carry it forward until explicitly confirmed fixed. |
 | "Medium/low findings — I'll fix them all anyway to be safe" | Your call, but not required — this loop ships with advisory findings listed. Don't burn rounds on them. |
-| "The stop hook keeps blocking; I'll just keep stopping" | The hook blocks while the review loop is active. Finish the loop (SHIP) or circuit-break (round > max_rounds, operator decides). |
+| "The stop hook keeps blocking; I'll just keep stopping" | The hook blocks while the review loop is active. Finish the loop (SHIP) or circuit-break at the 2-round cap (draft-PR handoff, `blocked_awaiting_operator`, operator decides). |
 | "I got VERDICT: SHIP — the loop is done, I'll report and stop" | No. Commit the verdict to the state file in the same turn first, reset `consecutive_blocks` to 0, re-read the state file, and only then report. A SHIP that the file doesn't record turns into guardrail blocks that leak into your reviewers' context. |
 | "No argument was provided, so I should resume or ask for a task" | Use the latest user request first. A named fresh task wins over auto-resume; otherwise validate the recorded loop. |
 | "The project exists now, so review can compare commits" | Not unless `base_sha` and `head_sha` are valid commits. Create/record the baseline before implementation and verify both SHAs before review. |

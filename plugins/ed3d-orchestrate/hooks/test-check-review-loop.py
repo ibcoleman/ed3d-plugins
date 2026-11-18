@@ -236,6 +236,51 @@ def main():
     root, _, _, _, decision = run(active(round_=4, max_rounds=3))
     check("round over cap -> allow", reason_ok(decision, "allow", "round 4 > max 3"))
     shutil.rmtree(root, ignore_errors=True)
+
+    print("operator wait, round derivation, and resolved findings")
+    blocked = active(verdict="FIX-FIRST", round_=2, max_rounds=2)
+    blocked["status"] = "blocked_awaiting_operator"
+    blocked["blocked_question"] = "Round cap reached: accept the draft handoff with 2 open highs?"
+    root, code, out, decision, before, after = run_with_snapshot(blocked)
+    check("blocked_awaiting_operator -> allow on first try", reason_ok(decision, "allow", "blocked-awaiting-operator"), out)
+    check("blocked stop repeats the operator question", "accept the draft handoff" in decision["reason"])
+    check("blocked stop leaves state unchanged", before == after)
+    shutil.rmtree(root, ignore_errors=True)
+    no_question = active(verdict="FIX-FIRST")
+    no_question["status"] = "blocked_awaiting_operator"
+    root, _, _, _, decision = run(no_question)
+    check("blocked status without a question -> ordinary block", reason_ok(decision, "block", "round 1 of"))
+    shutil.rmtree(root, ignore_errors=True)
+    regressed = active(verdict="PENDING", round_=1, max_rounds=3)
+    regressed["review"]["history"] = [
+        {"round": 1, "verdict": "FIX-FIRST", "critical_high": 1, "advisory": 0},
+        {"round": 2, "verdict": "PENDING", "critical_high": 0, "advisory": 0, "note": "adversary protocol failure"},
+    ]
+    root, _, _, out, decision = run(regressed)
+    check("round derives from highest history round", reason_ok(decision, "block", "round 2 of 3"), out)
+    shutil.rmtree(root, ignore_errors=True)
+    capped = active(verdict="FIX-FIRST", round_=1, max_rounds=2)
+    capped["review"]["history"] = [
+        {"round": 1, "verdict": "FIX-FIRST", "critical_high": 2, "advisory": 0},
+        {"round": 2, "verdict": "FIX-FIRST", "critical_high": 1, "advisory": 0},
+    ]
+    root, _, _, out, decision = run(capped)
+    check("finished FIX-FIRST cap round in history -> allow handoff", reason_ok(decision, "allow", "draft PR"), out)
+    shutil.rmtree(root, ignore_errors=True)
+    in_flight = active(verdict="PENDING", round_=2, max_rounds=2)
+    in_flight["review"]["history"] = [{"round": 1, "verdict": "FIX-FIRST", "critical_high": 1, "advisory": 0}]
+    root, _, _, out, decision = run(in_flight)
+    check("cap round still in flight -> block", reason_ok(decision, "block", "round 2 of 2"), out)
+    shutil.rmtree(root, ignore_errors=True)
+    carried = active(verdict="FIX-FIRST", round_=2, max_rounds=3)
+    carried["review"]["open_critical_high"] = ["H1 auth bypass", "H2 missing ACL"]
+    carried["review"]["resolved_findings"] = ["H1 auth bypass"]
+    root, _, _, out, decision = run(carried)
+    check("resolved findings are not reopened", "H2 missing ACL" in decision["reason"] and "H1 auth bypass" not in decision["reason"], out)
+    shutil.rmtree(root, ignore_errors=True)
+    root, _, _, _, decision = run({"ownership": {"status": "owned", "session_id": "owner-session", "transfer_from": None}, "review": {"active": True, "round": 1, "verdict": "FIX-FIRST"}})
+    check("missing max_rounds defaults to 2", reason_ok(decision, "block", "round 1 of 2"))
+    shutil.rmtree(root, ignore_errors=True)
     root, _, _, _, decision = run(active(consecutive=7))
     check("seven blocks -> allow", reason_ok(decision, "allow", "7 consecutive blocks"))
     shutil.rmtree(root, ignore_errors=True)
